@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+
+import rospy
+from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry
+from tf2_msgs.msg import TFMessage
+from transforms3d import _gohlketransforms,euler
+import tf
+from controller import controller
+
+class uav():
+
+    # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
+    def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
+                 name="",tf_world_frame="/world",tf_drone_frame="/drone"):
+        self.position_topic=name+position_topic
+        self.setpoint_topic=name+setpoint_topic
+        self.tf_world_frame=name+tf_world_frame
+        self.tf_drone_frame=name+tf_drone_frame
+        self.position_topic_type=position_topic_type
+        self.setpoint_topic_type=setpoint_topic_type
+        self.controller_array=[]
+
+        self.pos=self.uav_variables()
+        rospy.Subscriber(
+            self.position_topic,
+            position_topic_type,
+            self.position_listener_callback)
+        
+        self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
+
+    def init_controller(self, name, x_kp=0, x_kd=0, y_kp=0, y_kd=0, z_kp=0, z_kd=0, yaw_kp=0, yaw_kd=0):
+        name=
+        def __init_subclass__(cls, **kwargs)) -> None:
+            pass
+
+
+    def position_listener_callback(self,msg):
+        if msg._type=="tf2_msgs/TFMessage":
+            try:
+                (trans,rot)=self.listener.lookupTransform(self.tf_drone_frame, self.tf_world_frame, rospy.Time(0))
+                self.pos.x = trans[0]
+                self.pos.y = trans[1]
+                self.pos.z = trans[2]
+                self.pos.rx = rot[0]
+                self.pos.ry = rot[1]
+                self.pos.rz = rot[2]
+                self.pos.rw = rot[3]
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                rospy.logdebug("Missing tf transform")
+        elif msg._type=="geometry_msgs/PoseStamped":
+            self.pos.x = msg.pose.position.x
+            self.pos.y = msg.pose.position.y
+            self.pos.z = msg.pose.position.z
+            self.pos.rw = msg.pose.orientation.w
+            self.pos.rx = msg.pose.orientation.x
+            self.pos.ry = msg.pose.orientation.y
+            self.pos.rz = msg.pose.orientation.z
+        elif msg._type== "nav_msgs/Odometry" or msg._type== "geometry_msgs/PoseWithCovarianceStamped":
+            self.pos.x=msg.pose.pose.position.x
+            self.pos.y=msg.pose.pose.position.y
+            self.pos.z=msg.pose.pose.position.z
+            self.pos.rx=msg.pose.pose.orientation.x
+            self.pos.ry=msg.pose.pose.orientation.y
+            self.pos.rz=msg.pose.pose.orientation.z
+            self.pos.rw=msg.pose.pose.orientation.w
+        else:
+            rospy.logfatal("Invalid/Unsupported local position message type")
+
+
+    # Send setpoint with euler:yaw(in degrees)
+    # Roll and pitch are assumed to be 0 for simplicity as /setpoint_position/local does not take it into account anyways
+    def setpoint(self,x,y,z,yaw):
+        if self.setpoint_topic_type == PoseStamped:
+            msg = PoseStamped()
+            msg.pose.position.x= x
+            msg.pose.position.y= y
+            msg.pose.position.z= z
+            q = _gohlketransforms.quaternion_from_euler(0, 0, yaw, 'ryxz')
+            msg.pose.orientation.w = q[0]
+            msg.pose.orientation.x = q[1]
+            msg.pose.orientation.y = q[2]
+            msg.pose.orientation.z = q[3]
+            self.setpoint_publisher.publish(msg)
+        else:
+            rospy.logfatal("Invalid/Unsupported setpoint position message type")
+
+
+    def setpoint_quat(self,x,y,z,rx,ry,rz,rw):
+        if self.setpoint_topic_type == PoseStamped:
+            msg = PoseStamped()
+            msg.pose.position.x= x
+            msg.pose.position.y= y
+            msg.pose.position.z= z
+            msg.pose.orientation.w = rw
+            msg.pose.orientation.x = rx
+            msg.pose.orientation.y = ry
+            msg.pose.orientation.z = rz
+            self.setpoint_publisher.publish(msg)
+        else:
+            rospy.logfatal("Invalid/Unsupported setpoint position message type")
+
+
+    # UAV class to hold variables
+    class uav_variables():
+
+        def __init__(self):
+            self.x=0
+            self.y=0
+            self.z=0
+            self.rx=0
+            self.ry=0
+            self.rz=0
+            self.rw=0

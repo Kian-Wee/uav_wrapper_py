@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/kw/ros1_ws/devel/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/kw/ros1_ws/src/mavros/borealis_msgs/include/**",
+        "/home/kw/ros1_ws/src/mavros/libmavconn/include/**",
+        "/home/kw/ros1_ws/src/mavros/mavros/include/**",
+        "/home/kw/ros1_ws/src/mavros/mavros_msgs/include/**",
+        "/home/kw/ros1_ws/src/mavros/test_mavros/include/**",
+        "/home/kw/ros1_ws/src/vrpn_client_ros/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
