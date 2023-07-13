@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,GeoPoseStamped
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
+from sensor_msgs import NatSatFix
 from transforms3d import _gohlketransforms,euler
 import tf
 from controller import controller
 
+
+# This class is a wrapper to simplify common setpoint sending and position callbacks to make the main script more readable, espically when implementing other logic on the main script
+# By default it works with local positioning in mavros but can be adapted for global positoning
 class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
@@ -21,18 +25,13 @@ class uav():
         self.setpoint_topic_type=setpoint_topic_type
         self.controller_array=[]
 
-        self.pos=self.uav_variables()
+        self.pos=uav_variables()
         rospy.Subscriber(
             self.position_topic,
             position_topic_type,
             self.position_listener_callback)
         
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
-
-    def init_controller(self, name, x_kp=0, x_kd=0, y_kp=0, y_kd=0, z_kp=0, z_kd=0, yaw_kp=0, yaw_kd=0):
-        name=
-        def __init_subclass__(cls, **kwargs)) -> None:
-            pass
 
 
     def position_listener_callback(self,msg):
@@ -64,15 +63,56 @@ class uav():
             self.pos.ry=msg.pose.pose.orientation.y
             self.pos.rz=msg.pose.pose.orientation.z
             self.pos.rw=msg.pose.pose.orientation.w
+        elif msg._type=="sensor_msgs/NatSatFix":
+            rospy.loginfo_once("Using global positioning for position source")
+            self.pos.x=msg.latitude
+            self.pos.y=msg.longitude
+            self.pos.z=msg.altitude
+            # self.pos.rx=msg.pose.pose.orientation.x
+            # self.pos.ry=msg.pose.pose.orientation.y
+            # self.pos.rz=msg.pose.pose.orientation.z
+            # self.pos.rw=msg.pose.pose.orientation.w
         else:
             rospy.logfatal("Invalid/Unsupported local position message type")
 
 
-    # Send setpoint with euler:yaw(in degrees)
+    # Send setpoint directly to px4's MPC controller without any rotation
     # Roll and pitch are assumed to be 0 for simplicity as /setpoint_position/local does not take it into account anyways
-    def setpoint(self,x,y,z,yaw):
+    def setpoint(self,x,y,z):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
+            msg.header.stamp = rospy.get_time()
+            msg.pose.position.x= x
+            msg.pose.position.y= y
+            msg.pose.position.z= z
+            msg.pose.orientation.w = self.pos.rw
+            msg.pose.orientation.x = self.pos.rx
+            msg.pose.orientation.y = self.pos.ry
+            msg.pose.orientation.z = self.pos.rz
+            self.setpoint_publisher.publish(msg)
+        elif self.setpoint_topic_type == GeoPoseStamped:
+            if self.position_topic_type != NatSatFix:
+                rospy.logfatal("Using Global Setpoints but the positioning topic is not Global!!!")
+            else:
+                rospy.loginfo_once("Using global setpoints")
+                msg = GeoPoseStamped()
+                msg.pose.position.latitude=self.pos.x
+                msg.pose.position.longitude=self.pos.y
+                msg.pose.position.altitude=self.pos.z
+                # No yaw avaliable for the global_position/global topic
+                # msg.pose.orientation.w = self.pos.rw
+                # msg.pose.orientation.x = self.pos.rx
+                # msg.pose.orientation.y = self.pos.ry
+                # msg.pose.orientation.z = self.pos.rz
+        else:
+            rospy.logfatal("Invalid/Unsupported setpoint position message type")
+
+
+    # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
+    def setpoint_yaw(self,x,y,z,yaw):
+        if self.setpoint_topic_type == PoseStamped:
+            msg = PoseStamped()
+            msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
@@ -86,9 +126,11 @@ class uav():
             rospy.logfatal("Invalid/Unsupported setpoint position message type")
 
 
+    # Send setpoint directly to px4's MPC controller in quarternion
     def setpoint_quat(self,x,y,z,rx,ry,rz,rw):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
+            msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
@@ -101,14 +143,35 @@ class uav():
             rospy.logfatal("Invalid/Unsupported setpoint position message type")
 
 
-    # UAV class to hold variables
-    class uav_variables():
+    # Initalise additional MPC controller (pre PX4)
+    def init_controller(self, name, x_kp=0, x_kd=0, y_kp=0, y_kd=0, z_kp=0, z_kd=0, yaw_kp=0, yaw_kd=0):
+        self.controller_array.append(controller(name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd))
 
-        def __init__(self):
-            self.x=0
-            self.y=0
-            self.z=0
-            self.rx=0
-            self.ry=0
-            self.rz=0
-            self.rw=0
+
+    # Send setpoint, running through controller
+    def setpoint_controller(self,setpoint,controller_name):
+        check = False
+        for i in self.controller_array:
+            if i.name == controller_name:
+                arr=i.controller(setpoint,self.pos)
+                self.setpoint_quat(arr) 
+                # self.setpoint_quat(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6])
+                check = True
+
+        if check == False:
+            rospy.logfatal("Missing setpoint controller")
+
+
+# UAV class to hold variables
+# The main purpose of this class abstract out only the relevant position and orientation fields irregardless of whatever message type is used
+# The different message types are stored as these class variables to make it easier and more consistent to read and access
+class uav_variables():
+
+    def __init__(self):
+        self.x=0
+        self.y=0
+        self.z=0
+        self.rx=0
+        self.ry=0
+        self.rz=0
+        self.rw=0
