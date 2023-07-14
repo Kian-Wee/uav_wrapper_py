@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,GeoPoseStamped
+from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped
+from geographic_msgs.msg import GeoPoseStamped
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
-from sensor_msgs import NatSatFix
+from sensor_msgs.msg import NavSatFix
 from transforms3d import _gohlketransforms,euler
 import tf
 from controller import controller
@@ -81,7 +82,7 @@ class uav():
     def setpoint(self,x,y,z):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
-            msg.header.stamp = rospy.get_time()
+            # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
@@ -91,7 +92,7 @@ class uav():
             msg.pose.orientation.z = self.pos.rz
             self.setpoint_publisher.publish(msg)
         elif self.setpoint_topic_type == GeoPoseStamped:
-            if self.position_topic_type != NatSatFix:
+            if self.position_topic_type != NavSatFix:
                 rospy.logfatal("Using Global Setpoints but the positioning topic is not Global!!!")
             else:
                 rospy.loginfo_once("Using global setpoints")
@@ -112,7 +113,7 @@ class uav():
     def setpoint_yaw(self,x,y,z,yaw):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
-            msg.header.stamp = rospy.get_time()
+            # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
@@ -130,7 +131,7 @@ class uav():
     def setpoint_quat(self,x,y,z,rx,ry,rz,rw):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
-            msg.header.stamp = rospy.get_time()
+            # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
@@ -145,6 +146,7 @@ class uav():
 
     # Initalise additional MPC controller (pre PX4)
     def init_controller(self, name, x_kp=0, x_kd=0, y_kp=0, y_kd=0, z_kp=0, z_kd=0, yaw_kp=0, yaw_kd=0):
+        # self.controller_array.append(controller.controller.__init_subclass__(name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd))
         self.controller_array.append(controller(name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd))
 
 
@@ -154,8 +156,7 @@ class uav():
         for i in self.controller_array:
             if i.name == controller_name:
                 arr=i.controller(setpoint,self.pos)
-                self.setpoint_quat(arr) 
-                # self.setpoint_quat(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6])
+                self.setpoint_quat(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6])
                 check = True
 
         if check == False:
@@ -167,11 +168,11 @@ class uav():
 # The different message types are stored as these class variables to make it easier and more consistent to read and access
 class uav_variables():
 
-    def __init__(self):
-        self.x=0
-        self.y=0
-        self.z=0
-        self.rx=0
-        self.ry=0
-        self.rz=0
-        self.rw=0
+    def __init__(self,x=0,y=0,z=0,rx=0,ry=0,rz=0,rw=0):
+        self.x=x
+        self.y=y
+        self.z=z
+        self.rx=rx
+        self.ry=ry
+        self.rz=rz
+        self.rw=rw

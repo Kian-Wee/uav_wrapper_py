@@ -7,16 +7,24 @@ from transforms3d import _gohlketransforms,euler
 # This subclass may be instantiated multiple times by the uav class to add multiple controllers to the offboard script
 class controller():
 
-    def __init_subclass__(self,name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd, **kwargs):
-        super().__init_subclass__(**kwargs)
-        print(f"Called __init_subclass({self}, {name})")
+    # def __init_subclass__(self,name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd, **kwargs):
+    #     super().__init_subclass__(**kwargs)
+    #     print(f"Called __init_subclass({self}, {name})")
+    #     self.name = name
+    #     self.x= self.pid_variables(x_kp,0,x_kd)
+    #     self.y= self.pid_variables(y_kp,0,y_kd)
+    #     self.z= self.pid_variables(z_kp,0,z_kd)
+    #     self.yaw= self.pid_variables(yaw_kp,0,yaw_kd)
+    #     self.error_past=0
+
+
+    def __init__(self,name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd):
         self.name = name
         self.x= self.pid_variables(x_kp,0,x_kd)
         self.y= self.pid_variables(y_kp,0,y_kd)
         self.z= self.pid_variables(z_kp,0,z_kd)
         self.yaw= self.pid_variables(yaw_kp,0,yaw_kd)
         self.error_past=0
-        
 
     def controller(self, setpoint, current):
         # Error = Setpoint - Feedback

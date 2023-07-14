@@ -19,7 +19,6 @@ cameratobody_y =0 # +ve is left
 cameratobody_z =0 # +ve is up 
 
 # Camera Topic for desired setpoint
-camera_setpoint_mode="/tf" #listen for setpoint at /tf or at /topic(given by camera_setpoint_topic)
 camera_setpoint_topic="/camera_setpoint" # if tf is not in use
 camera_frame_id="/camera"
 world_frame_id="/map"
@@ -41,16 +40,18 @@ class offboard_node():
         self.uav.init_controller("thruster",0.2,0)
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
-        if camera_setpoint_mode == "/topic":
-            # rospy.Subscriber(
-            #     camera_setpoint_topic,
-            #     PoseStamped,
-            #     self.camera_listener_callback)
+        if camera_setpoint_topic != "/tf":
             rospy.Subscriber(
                 camera_setpoint_topic,
-                TFMessage,
+                PoseStamped,
                 self.camera_listener_callback)
+            # rospy.Subscriber(
+            #     camera_setpoint_topic,
+            #     TFMessage,
+            #     self.camera_listener_callback)
+            print(f"Using " + camera_setpoint_topic + " setpoint topic")
         else:
+            print("Using TF Transforms for setpoints")
             self.listener = tf.TransformListener()
 
         self.last_acceptable_setpoint = uav_variables()
@@ -61,25 +62,27 @@ class offboard_node():
     
         while not rospy.is_shutdown():
 
-            current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz]) #wxyz default
-            setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz]) #wxyz default
+            current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
+            setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
+
+            # No setpoint sent yet
+            if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
+                self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
 
             # Switch to less aggressive controller when close
-            if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) < threshold_jog_deg:
+            elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) < threshold_jog_deg:
                 rospy.loginfo_once("Setpoint[%s,%s,%s] close to drone, jogging it inwards based on past position",self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z)
                 self.uav.setpoint_controller(self.camera_setpoint,"close")
                 # TODO !!! self.thruster_controller.publish(self.last_acceptable_setpoint,self.local_position) # Change to output PWM
             
             # Approach setpoint with aggressive controller when far
             else:
-                rospy.loginfo_once("Setpoint far from drone, using controller %s",self.local_position.x)
+                rospy.loginfo_once("Setpoint far from drone, using controller %s",self.uav.pos.x)
                 self.last_acceptable_setpoint = self.camera_setpoint
                 self.uav.setpoint_controller(self.camera_setpoint,"far")
 
-            self.uav.setpoint(0,0,1) # Publish setpoint at x=0, y=0, z=1
             self.rosrate.sleep()
 
-            
 
     def camera_listener_callback(self, msg):
         rospy.loginfo("New Camera setpoint(x:"+str(msg.pose.position.x)+", y:"+str(msg.pose.position.y)+", z:"+str(msg.pose.position.z)+")")
@@ -93,6 +96,10 @@ class offboard_node():
                 self.camera_setpoint.ry = msg.transforms[0].transform.rotation.y
                 self.camera_setpoint.rz = msg.transforms[0].transform.rotation.z
                 self.camera_setpoint.rw = msg.transforms[0].transform.rotation.w
+                #Perform transformation of camera setpoint wrt to body
+                self.camera_setpoint.x=self.camera_setpoint.x-cameratobody_x
+                self.camera_setpoint.y=self.camera_setpoint.y-cameratobody_y
+                self.camera_setpoint.z=self.camera_setpoint.z-cameratobody_z
         elif msg._type=="geometry_msgs/PoseStamped":
             self.camera_setpoint.x = msg.pose.position.x
             self.camera_setpoint.y = msg.pose.position.y
@@ -101,13 +108,13 @@ class offboard_node():
             self.camera_setpoint.rx = msg.pose.orientation.x
             self.camera_setpoint.ry = msg.pose.orientation.y
             self.camera_setpoint.rz = msg.pose.orientation.z
+            #Perform transformation of camera setpoint wrt to body
+            self.camera_setpoint.x=self.camera_setpoint.x-cameratobody_x
+            self.camera_setpoint.y=self.camera_setpoint.y-cameratobody_y
+            self.camera_setpoint.z=self.camera_setpoint.z-cameratobody_z
         else:
             rospy.logfatal("Invalid camera setpoint message type")
 
-        #Perform transformation of camera setpoint wrt to body
-        self.camera_setpoint.pose.position.x=self.camera_setpoint.pose.position.x-cameratobody_x
-        self.camera_setpoint.pose.position.y=self.camera_setpoint.pose.position.y-cameratobody_y
-        self.camera_setpoint.pose.position.z=self.camera_setpoint.pose.position.z-cameratobody_z
         
     def quit(self):
         print("Killing node")
