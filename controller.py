@@ -42,10 +42,39 @@ class controller():
         q = _gohlketransforms.quaternion_from_euler(0, 0, input_eul, 'ryxz') # 0 pitch, 0 roll
 
         self.error_past = self.error
-        
+
         return[input_x+current.x,input_y+current.y,input_z+current.z,
                             q[0],q[1],q[2],q[3]]
 
+    # controller with 1 actuator output to control auxiliary devices which require pd control
+    # Takes in single error input & single current state and returns single error output
+    # Uses only x_kp and x_kd 
+    def custom_single_controller(self, error, current):
+        # Error = Setpoint - Feedback
+        self.error = error
+        # Derivative error = Error - error_past
+        self.derivative_error = self.error - self.error_past
+
+        input_a = 0.4 - (self.x.p * -self.error) + (self.x.d * self.derivative_error)
+
+        self.error_past = self.error
+
+        return[input_a+current]
+
+    # # controller with 1 actuator output to control auxiliary devices which require pd control
+    # # Takes in single error input & single current state and returns single error output
+    # # Uses only x_kp and x_kd 
+    # def custom_single_controller(self, error, current):
+    #     # Error = Setpoint - Feedback
+    #     self.error = error
+    #     # Derivative error = Error - error_past
+    #     self.derivative_error = self.error - self.error_past
+
+    #     input_a = (self.x.p * self.error) + (self.x.d * self.derivative_error)
+
+    #     self.error_past = self.error
+
+    #     return[input_a+current]
 
     class pid_variables():
 

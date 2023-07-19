@@ -144,7 +144,7 @@ class uav():
             rospy.logfatal("Invalid/Unsupported setpoint position message type")
 
 
-    # Initalise additional MPC controller (pre PX4)
+    # Initalise additional MPC controller (pre-PX4 MPC)
     def init_controller(self, name, x_kp=0, x_kd=0, y_kp=0, y_kd=0, z_kp=0, z_kd=0, yaw_kp=0, yaw_kd=0):
         # self.controller_array.append(controller.controller.__init_subclass__(name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd))
         self.controller_array.append(controller(name, x_kp, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd))
@@ -158,7 +158,6 @@ class uav():
                 arr=i.controller(setpoint,self.pos)
                 self.setpoint_quat(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6])
                 check = True
-
         if check == False:
             rospy.logfatal("Missing setpoint controller")
 
