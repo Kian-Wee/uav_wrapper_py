@@ -3,22 +3,22 @@
 import rospy
 from uav import uav, uav_variables
 from geometry_msgs.msg import PoseStamped
+from geographic_msgs.msg import GeoPoseStamped
 from tf2_msgs.msg import TFMessage
 import tf
 from math import degrees
 from transforms3d import _gohlketransforms,euler
 import serial
-import math
 from sensor_msgs.msg import Range
 import time
+import coordinates
 
 # Example code for a multi-staged multi-controller wall approach, to get it close to a wall and then slowly jog in 
-
 
 rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
-cameratobody_x = 0.4 # +ve is forward
+cameratobody_x = 0 # +ve is forward
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="/tf"
@@ -26,10 +26,8 @@ camera_frame_id="/camera"
 world_frame_id="/map"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
-threshold_jog=0.5 #m
-threshold_jog_deg=5 #deg
-# Rear Thruster Topic
-thruster_output_topic="/thruster/pwm"
+threshold_jog=0.1 #m
+threshold_jog_deg=10 #deg
 max_deployment_times = 1
 
 
@@ -38,14 +36,15 @@ ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_
 class offboard_node():
 
     def __init__(self):
-        print("Initalising Offboard Wall Node")
+        print("Initalising Offboard Waypoint Drop Node")
 
         self.uav = uav() # Initalise UAV object
         self.uav.init_controller("far",0.5,0.125,0.5,0.125,0.5,0.8,0.25,0.0625) # Initalise additional controllers
-        self.uav.init_controller("close",0.1,0.125,0.1,0.125,0.1,0.8,0.5,0.0625)
-        aux_kp=0.2
-        self.uav.init_controller("aux",aux_kp,0)
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
+
+        self.latitude=coordinates.latitude
+        self.longitude=coordinates.longitude
+        self.altitude=coordinates.altitude
 
         if camera_setpoint_topic != "/tf":
             rospy.Subscriber(
@@ -60,25 +59,19 @@ class offboard_node():
             print("Using TF Transforms for setpoints")
             self.listener = tf.TransformListener()
         
-        print(f"Using " + camera_setpoint_topic + " setpoint topic")
+        print("Using " + camera_setpoint_topic + " setpoint topic")
 
-        self.last_acceptable_setpoint = uav_variables()
-        self.last_acceptable_setpoint = self.camera_setpoint
-
-        rospy.Subscriber('Range_to_wall',Range,self.range_callback)
-        self.wall_dist=999
-        self.wall_timer=time.time()
-        self.wall_dur=3 #s
-        self.adh_timer=time.time()
-        self.adh_dur=10 #s
         self.reset_timer=time.time()
         self.reset_dur=1
         self.release_stage="disarmed"
 
         deployment_times = 0
+        self.detected = False
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
+
+        self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
     
         while not rospy.is_shutdown():
 
@@ -91,6 +84,8 @@ class offboard_node():
                 self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
                 self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
                 self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
+                self.detected = True
+                rospy.loginfo_once("Detected Transform from camera")
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 rospy.logdebug("Missing tf transform")
 
@@ -101,63 +96,37 @@ class offboard_node():
             if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
                 self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
             
-            elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog:
-                rospy.loginfo_once("Setpoint[%s,%s,%s] close to drone, jogging it inwards based on past position",self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z)
-                 # Stop and yaw on the spot with less agressive nearfield controller when close to wall
-                if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
-                    rospy.loginfo_once("Yawing towards setpoint")
-                    self.yaw_setpoint=uav_variables()
-                    self.yaw_setpoint.x=self.uav.pos.x
-                    self.yaw_setpoint.y=self.uav.pos.y
-                    self.yaw_setpoint.z=self.uav.pos.z
-                    self.yaw_setpoint.rx=self.camera_setpoint.rx
-                    self.yaw_setpoint.ry=self.camera_setpoint.ry
-                    self.yaw_setpoint.rz=self.camera_setpoint.rz
-                    self.yaw_setpoint.rw=self.camera_setpoint.rw
-                    self.uav.setpoint_controller(self.camera_setpoint,"close")
-               # Switch to less aggressive nearfield controller when close to wall and start translating
-                elif deployment_times <max_deployment_times:
-                    self.uav.setpoint_controller(self.camera_setpoint,"close")
-                    rospy.loginfo_once("Yaw within margin, moving towards setpoint and using rear thruster")
-                    thr_val = self.uav.controller_array["aux"].custom_single_controller(self.wall_dist,self.wall_dist)
-                    ser.write(str(translate(thr_val, 0, aux_kp, 0, 100)))
-                    if self.wall_dist <= 0.05 and self.release_stage=="disarmed":
-                        rospy.loginfo_once("contact")
-                        self.wall_timer=rospy.get_time()
-                        self.release_stage= "Approached wall, stabalising"
-                    if (self.wall_dist <= 0.05 and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
-                        rospy.loginfo_once("Touched wall and stabalised, releasing adhesive")
-                        self.release_stage= "glue_release"
-                        ser.write(self.release_stage)
-                        self.adh_timer=rospy.get_time()
-                    if (self.wall_dist <= 0.05 and self.release_stage=="glue_release" and time.time()>=self.adh_timer+self.adh_dur):
-                        rospy.loginfo_once("Dropping payload")
-                        self.release_stage="payload_drop"
-                        ser.write(self.release_stage)
-                        self.reset_timer=rospy.get_time()
-                    if (self.wall_dist <= 0.05 and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
-                        rospy.loginfo_once("Disarming")
-                        self.release_stage="uv_off"
-                        ser.write(self.release_stage)
-                        self.release_stage="payload_reset"
-                        ser.write(self.release_stage)
-                        self.release_stage="disarmed"
-                        ser.write("0")
-                        deployment_times +=1
-                else:
-                    rospy.loginfo_once("Deployment over")
-
-            # Approach setpoint with aggressive controller when far 
-            else:
-                rospy.loginfo_once("Setpoint far from drone, using controller %s",self.uav.pos.x)
-                self.last_acceptable_setpoint = self.camera_setpoint
+            # Camera detected droppoint, switching from GPS to local setpoint mode
+            elif self.detected == True :
                 self.uav.setpoint_controller(self.camera_setpoint,"far")
+                # At drop point, dropping payload
+                if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
+                    rospy.loginfo_once("UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
+                    if deployment_times <max_deployment_times:
+                        if (self.release_stage=="disarmed"):
+                            rospy.loginfo_once("Dropping payload")
+                            self.release_stage="payload_drop"
+                            ser.write(self.release_stage)
+                            self.reset_timer=rospy.get_time()
+                        if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
+                            rospy.loginfo_once("Disarming")
+                            self.release_stage="payload_reset"
+                            ser.write(self.release_stage)
+                            ser.write("0")
+                            self.release_stage="disarmed"
+                            deployment_times +=1
+                    else:
+                        rospy.loginfo_once("Deployment over")
+
+            # Drone not at GPS Setpoint, send global coordinates
+            else:
+                msg=GeoPoseStamped()
+                msg.pose.position.latitude=self.latitude
+                msg.pose.position.longitude=self.longitude
+                msg.pose.position.altitude=self.altitude
+                self.global_setpoint_publisher.publish(msg)
 
             self.rosrate.sleep()
-
-
-    def range_callback(self, msg):
-        self.wall_dist = msg.range - cameratobody_x
 
 
     def camera_listener_callback(self, msg):
@@ -194,7 +163,7 @@ class offboard_node():
         else:
             rospy.logfatal("Invalid camera setpoint message type")
 
-        
+
     def quit(self):
         print("Killing node")
         ser.write('D0')
@@ -202,21 +171,9 @@ class offboard_node():
         rospy.signal_shutdown("Node shutting down")
 
 
-def translate(value, leftMin, leftMax, rightMin, rightMax):
-    # Figure out how 'wide' each range is
-    leftSpan = leftMax - leftMin
-    rightSpan = rightMax - rightMin
-
-    # Convert the left range into a 0-1 range (float)
-    valueScaled = float(value - leftMin) / float(leftSpan)
-
-    # Convert the 0-1 range into a value in the right range.
-    return rightMin + (valueScaled * rightSpan)
-
-
 if __name__ == '__main__':
     
-    rospy.init_node('Offboard_Wall_Node')
+    rospy.init_node('Offboard_Waypoint_Drop_Node')
 
     node = offboard_node()
 
