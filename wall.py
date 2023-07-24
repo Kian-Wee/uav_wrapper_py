@@ -32,8 +32,8 @@ threshold_jog_deg=5 #deg
 thruster_output_topic="/thruster/pwm"
 max_deployment_times = 1
 
-
-ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
+ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:98:E4-if00', 115200) #ls /dev/serial/by-id/*
+# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
 
 class offboard_node():
 
@@ -86,7 +86,7 @@ class offboard_node():
                 (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
                 self.camera_setpoint.x = trans[0]+self.uav.pos.x
                 self.camera_setpoint.y = trans[1]+self.uav.pos.y
-                self.camera_setpoint.z = trans[2]+self.uav.pos.z
+                self.camera_setpoint.z = 1.2 #trans[2]+self.uav.pos.z
                 self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
                 self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
                 self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
@@ -109,17 +109,19 @@ class offboard_node():
                     self.yaw_setpoint=uav_variables()
                     self.yaw_setpoint.x=self.uav.pos.x
                     self.yaw_setpoint.y=self.uav.pos.y
-                    self.yaw_setpoint.z=self.uav.pos.z
+                    self.yaw_setpoint.z=1.2 #self.uav.pos.z
                     self.yaw_setpoint.rx=self.camera_setpoint.rx
                     self.yaw_setpoint.ry=self.camera_setpoint.ry
                     self.yaw_setpoint.rz=self.camera_setpoint.rz
                     self.yaw_setpoint.rw=self.camera_setpoint.rw
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
+                    print("yaw")
                # Switch to less aggressive nearfield controller when close to wall and start translating
                 elif deployment_times <max_deployment_times:
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
                     rospy.loginfo_once("Yaw within margin, moving towards setpoint and using rear thruster")
                     thr_val = self.uav.controller_array["aux"].custom_single_controller(self.wall_dist,self.wall_dist)
+                    print(str(translate(thr_val, 0, aux_kp, 0, 100)))
                     ser.write(str(translate(thr_val, 0, aux_kp, 0, 100)))
                     if self.wall_dist <= 0.05 and self.release_stage=="disarmed":
                         rospy.loginfo_once("contact")
@@ -197,7 +199,7 @@ class offboard_node():
         
     def quit(self):
         print("Killing node")
-        ser.write('D0')
+        ser.write(str.encode('D0'))
         ser.close()
         rospy.signal_shutdown("Node shutting down")
 

@@ -19,19 +19,20 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
+payload_drop_height=1.2
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="/tf"
-camera_frame_id="/camera"
-world_frame_id="/map"
+camera_frame_id="/pole"
+world_frame_id="/local"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
 threshold_jog=0.1 #m
 threshold_jog_deg=10 #deg
 max_deployment_times = 1
 
-
-ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
+ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
+# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
 
 class offboard_node():
 
@@ -61,6 +62,10 @@ class offboard_node():
         
         print("Using " + camera_setpoint_topic + " setpoint topic")
 
+        local_to_base_broadcaster = tf.TransformBroadcaster()
+        rospy.Subscriber("/mavros/local_position/pose",PoseStamped,self.local_pos_callback)
+        self.pos=uav_variables()
+
         self.reset_timer=time.time()
         self.reset_dur=1
         self.release_stage="disarmed"
@@ -74,6 +79,12 @@ class offboard_node():
         self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
     
         while not rospy.is_shutdown():
+
+            local_to_base_broadcaster.sendTransform((self.pos.x, self.pos.y, self.pos.z),
+                    (self.pos.rx,self.pos.ry,self.pos.rz,self.pos.rw),
+                    rospy.Time.now(),
+                    "base_link",
+                    "local")
 
             try:
                 (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
@@ -112,18 +123,18 @@ class offboard_node():
                             rospy.loginfo_once("Disarming")
                             self.release_stage="payload_reset"
                             ser.write(self.release_stage)
-                            ser.write("0")
+                            ser.write(str.encode("0"))
                             self.release_stage="disarmed"
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
-
+ 
             # Drone not at GPS Setpoint, send global coordinates
             else:
                 msg=GeoPoseStamped()
                 msg.pose.position.latitude=self.latitude
                 msg.pose.position.longitude=self.longitude
-                msg.pose.position.altitude=self.altitude
+                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
                 self.global_setpoint_publisher.publish(msg)
 
             self.rosrate.sleep()
@@ -143,10 +154,10 @@ class offboard_node():
         #         self.camera_setpoint.rz = msg.transforms[0].transform.rotation.z
         #         self.camera_setpoint.rw = msg.transforms[0].transform.rotation.w
         if msg._type=="geometry_msgs/PoseStamped":
-            if self.camera_setpoint.z > 0:
+            if self.camera_setpoint.z + payload_drop_height > 0:
                 self.camera_setpoint.x = msg.pose.position.x
                 self.camera_setpoint.y = msg.pose.position.y
-                self.camera_setpoint.z = msg.pose.position.z
+                self.camera_setpoint.z = msg.pose.position.z + payload_drop_height
                 self.camera_setpoint.rw = msg.pose.orientation.w
                 self.camera_setpoint.rx = msg.pose.orientation.x
                 self.camera_setpoint.ry = msg.pose.orientation.y
@@ -163,10 +174,18 @@ class offboard_node():
         else:
             rospy.logfatal("Invalid camera setpoint message type")
 
+    def local_pos_callback(self,msg):
+        self.pos.x = msg.pose.position.x
+        self.pos.y = msg.pose.position.y
+        self.pos.z = msg.pose.position.z
+        self.pos.rw = msg.pose.orientation.w
+        self.pos.rx = msg.pose.orientation.x
+        self.pos.ry = msg.pose.orientation.y
+        self.pos.rz = msg.pose.orientation.z
 
     def quit(self):
         print("Killing node")
-        ser.write('D0')
+        ser.write(str.encode('D0'))
         ser.close()
         rospy.signal_shutdown("Node shutting down")
 
@@ -178,3 +197,36 @@ if __name__ == '__main__':
     node = offboard_node()
 
     rospy.spin()
+
+
+#!/usr/bin/env python3
+# Example code that helps you convert between AMSL and ellipsoid height
+# To run this code you need:
+#
+# 1) the egm96-5.pgm file from geographiclib.
+# To get it on Ubuntu run:
+# sudo apt install geographiclib-tools
+# sudo geographiclib-get-geoids egm96-5
+#
+# 2) PyGeodesy
+# To get it using pip:
+# pip install PyGeodesy
+
+from pygeodesy.geoids import GeoidPGM
+
+_egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
+
+def geoid_height(lat, lon):
+    """Calculates AMSL to ellipsoid conversion offset.
+    Uses EGM96 data with 5' grid and cubic interpolation.
+    The value returned can help you convert from meters 
+    above mean sea level (AMSL) to meters above
+    the WGS84 ellipsoid.
+
+    If you want to go from AMSL to ellipsoid height, add the value.
+
+    To go from ellipsoid height to AMSL, subtract this value.
+    """
+    return _egm96.height(lat, lon)
+
+# ellipsoid height to AMSL
