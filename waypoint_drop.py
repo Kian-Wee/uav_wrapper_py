@@ -87,7 +87,7 @@ class offboard_node():
                     "local")
 
             try:
-                (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
+                (trans,rot)=self.listener.lookupTransform(world_frame_id, camera_frame_id, rospy.Time(0))
                 self.camera_setpoint.x = trans[0]+self.uav.pos.x
                 self.camera_setpoint.y = trans[1]+self.uav.pos.y
                 self.camera_setpoint.z = trans[2]+self.uav.pos.z
