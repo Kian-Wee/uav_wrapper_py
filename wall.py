@@ -18,7 +18,7 @@ import time
 rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
-cameratobody_x = 0.4 # +ve is forward
+cameratobody_x = 0.5 # +ve is forward
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="/tf"
@@ -83,14 +83,22 @@ class offboard_node():
         while not rospy.is_shutdown():
 
             try:
-                (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
-                self.camera_setpoint.x = trans[0]+self.uav.pos.x
-                self.camera_setpoint.y = trans[1]+self.uav.pos.y
-                self.camera_setpoint.z = 1.2 #trans[2]+self.uav.pos.z
-                self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
-                self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
-                self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
-                self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
+                (trans,rot)=self.listener.lookupTransform(world_frame_id, camera_frame_id, rospy.Time(0))
+                print(trans)
+                # self.camera_setpoint.x = trans[0]+self.uav.pos.x
+                # self.camera_setpoint.y = trans[1]+self.uav.pos.y
+                # self.camera_setpoint.z = 1.2 #trans[2]+self.uav.pos.z
+                # self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
+                # self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
+                # self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
+                # self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
+                self.camera_setpoint.x = trans[0]
+                self.camera_setpoint.y = trans[1] -cameratobody_x 
+                self.camera_setpoint.z = 1.2
+                self.camera_setpoint.rx = rot[0]
+                self.camera_setpoint.ry = rot[1]
+                self.camera_setpoint.rz = rot[2]
+                self.camera_setpoint.rw = rot[3]
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 rospy.logdebug("Missing tf transform")
 
@@ -100,8 +108,9 @@ class offboard_node():
             # No setpoint sent yet
             if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
                 self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
-            
+                print("far")
             elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog:
+                print("close")
                 rospy.loginfo_once("Setpoint[%s,%s,%s] close to drone, jogging it inwards based on past position",self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z)
                  # Stop and yaw on the spot with less agressive nearfield controller when close to wall
                 if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
@@ -178,8 +187,8 @@ class offboard_node():
         if msg._type=="geometry_msgs/PoseStamped":
             if self.camera_setpoint.z > 0:
                 self.camera_setpoint.x = msg.pose.position.x
-                self.camera_setpoint.y = msg.pose.position.y
-                self.camera_setpoint.z = msg.pose.position.z
+                self.camera_setpoint.y = msg.pose.position.y - cameratobody_x 
+                self.camera_setpoint.z = 1.2
                 self.camera_setpoint.rw = msg.pose.orientation.w
                 self.camera_setpoint.rx = msg.pose.orientation.x
                 self.camera_setpoint.ry = msg.pose.orientation.y
@@ -187,8 +196,8 @@ class offboard_node():
             else:
                 rospy.logerr("Setpoint Z <<< 0")
                 self.camera_setpoint.x = self.uav.pos.x
-                self.camera_setpoint.y = self.uav.pos.y
-                self.camera_setpoint.z = self.uav.pos.z
+                self.camera_setpoint.y = self.uav.pos.y - cameratobody_x 
+                self.camera_setpoint.z = 1.2
                 self.camera_setpoint.rw = self.uav.pos.rw
                 self.camera_setpoint.rx = self.uav.pos.rx
                 self.camera_setpoint.ry = self.uav.pos.ry
