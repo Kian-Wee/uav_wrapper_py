@@ -93,7 +93,7 @@ class offboard_node():
                 # self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
                 # self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
                 self.camera_setpoint.x = trans[0]
-                self.camera_setpoint.y = trans[1] -cameratobody_x 
+                self.camera_setpoint.y = trans[1] + cameratobody_x 
                 self.camera_setpoint.z = 1.2
                 self.camera_setpoint.rx = rot[0]
                 self.camera_setpoint.ry = rot[1]
@@ -123,15 +123,19 @@ class offboard_node():
                     self.yaw_setpoint.ry=self.camera_setpoint.ry
                     self.yaw_setpoint.rz=self.camera_setpoint.rz
                     self.yaw_setpoint.rw=self.camera_setpoint.rw
-                    self.uav.setpoint_controller(self.camera_setpoint,"close")
+                    self.uav.setpoint_controller(self.yaw_setpoint,"close")
                     print("yaw")
                # Switch to less aggressive nearfield controller when close to wall and start translating
                 elif deployment_times <max_deployment_times:
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
                     rospy.loginfo_once("Yaw within margin, moving towards setpoint and using rear thruster")
-                    thr_val = self.uav.controller_array["aux"].custom_single_controller(self.wall_dist,self.wall_dist)
-                    print(str(translate(thr_val, 0, aux_kp, 0, 100)))
-                    ser.write(str(translate(thr_val, 0, aux_kp, 0, 100)))
+                    print(" ")
+                    for i in self.uav.controller_array:
+                        if i.name == "aux":
+                            thr_val = i.custom_single_controller(self.wall_dist,self.wall_dist)[0]
+                    
+                    print(str(translate(thr_val, 0, aux_kp, 0, 50)))
+                    ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     if self.wall_dist <= 0.05 and self.release_stage=="disarmed":
                         rospy.loginfo_once("Approached wall, stabilising")
                         self.release_stage= "contact"
@@ -189,7 +193,7 @@ class offboard_node():
         if msg._type=="geometry_msgs/PoseStamped":
             if self.camera_setpoint.z > 0:
                 self.camera_setpoint.x = msg.pose.position.x
-                self.camera_setpoint.y = msg.pose.position.y - cameratobody_x 
+                self.camera_setpoint.y = msg.pose.position.y + cameratobody_x 
                 self.camera_setpoint.z = 1.2
                 self.camera_setpoint.rw = msg.pose.orientation.w
                 self.camera_setpoint.rx = msg.pose.orientation.x
@@ -198,7 +202,7 @@ class offboard_node():
             else:
                 rospy.logerr("Setpoint Z <<< 0")
                 self.camera_setpoint.x = self.uav.pos.x
-                self.camera_setpoint.y = self.uav.pos.y - cameratobody_x 
+                self.camera_setpoint.y = self.uav.pos.y + cameratobody_x 
                 self.camera_setpoint.z = 1.2
                 self.camera_setpoint.rw = self.uav.pos.rw
                 self.camera_setpoint.rx = self.uav.pos.rx

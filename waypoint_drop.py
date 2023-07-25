@@ -87,10 +87,10 @@ class offboard_node():
                     "local")
 
             try:
-                (trans,rot)=self.listener.lookupTransform(world_frame_id, camera_frame_id, rospy.Time(0))
+                (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
                 self.camera_setpoint.x = trans[0]+self.uav.pos.x
                 self.camera_setpoint.y = trans[1]+self.uav.pos.y
-                self.camera_setpoint.z = trans[2]+self.uav.pos.z
+                self.camera_setpoint.z = trans[2]+self.uav.pos.z + payload_drop_height
                 self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
                 self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
                 self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
@@ -117,12 +117,14 @@ class offboard_node():
                         if (self.release_stage=="disarmed"):
                             rospy.loginfo_once("Dropping payload")
                             self.release_stage="payload_drop"
-                            ser.write(str.encode(self.release_stage))
+                            ser.write(self.release_stage)
                             self.reset_timer=rospy.get_time()
                         if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_once("Disarming")
                             self.release_stage="payload_reset"
-                            ser.write(str.encode(self.release_stage))
+                            ser.write(self.release_stage)
+                            ser.write(str.encode("0"))
+                            self.release_stage="disarmed"
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
@@ -132,7 +134,7 @@ class offboard_node():
                 msg=GeoPoseStamped()
                 msg.pose.position.latitude=self.latitude
                 msg.pose.position.longitude=self.longitude
-                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
+                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) + payload_drop_height
                 self.global_setpoint_publisher.publish(msg)
 
             self.rosrate.sleep()
