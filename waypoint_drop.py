@@ -117,12 +117,12 @@ class offboard_node():
                         if (self.release_stage=="disarmed"):
                             rospy.loginfo_once("Dropping payload")
                             self.release_stage="payload_drop"
-                            ser.write(self.release_stage)
+                            ser.write(str.encode(self.release_stage))
                             self.reset_timer=rospy.get_time()
                         if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_once("Disarming")
                             self.release_stage="payload_reset"
-                            ser.write(self.release_stage)
+                            ser.write(str.encode(self.release_stage))
                             ser.write(str.encode("0"))
                             self.release_stage="disarmed"
                             deployment_times +=1
