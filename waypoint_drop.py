@@ -123,8 +123,6 @@ class offboard_node():
                             rospy.loginfo_once("Disarming")
                             self.release_stage="payload_reset"
                             ser.write(str.encode(self.release_stage))
-                            ser.write(str.encode("0"))
-                            self.release_stage="disarmed"
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
