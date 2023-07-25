@@ -133,27 +133,29 @@ class offboard_node():
                     print(str(translate(thr_val, 0, aux_kp, 0, 100)))
                     ser.write(str(translate(thr_val, 0, aux_kp, 0, 100)))
                     if self.wall_dist <= 0.05 and self.release_stage=="disarmed":
-                        rospy.loginfo_once("contact")
+                        rospy.loginfo_once("Approached wall, stabilising")
+                        self.release_stage= "contact"
+                        ser.write(str.encode(self.release_stage))
                         self.wall_timer=rospy.get_time()
-                        self.release_stage= "Approached wall, stabalising"
                     if (self.wall_dist <= 0.05 and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.loginfo_once("Touched wall and stabalised, releasing adhesive")
                         self.release_stage= "glue_release"
-                        ser.write(self.release_stage)
+                        ser.write(str.encode(self.release_stage))
                         self.adh_timer=rospy.get_time()
                     if (self.wall_dist <= 0.05 and self.release_stage=="glue_release" and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_once("Dropping payload")
                         self.release_stage="payload_drop"
-                        ser.write(self.release_stage)
+                        ser.write(str.encode(self.release_stage))
                         self.reset_timer=rospy.get_time()
                     if (self.wall_dist <= 0.05 and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_once("Disarming")
                         self.release_stage="uv_off"
-                        ser.write(self.release_stage)
+                        ser.write(str.encode(self.release_stage))
                         self.release_stage="payload_reset"
-                        ser.write(self.release_stage)
+                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode('0')) # Set thruster to 0
                         self.release_stage="disarmed"
-                        ser.write("0")
+                        ser.write(str.encode(self.release_stage))
                         deployment_times +=1
                 else:
                     rospy.loginfo_once("Deployment over")
