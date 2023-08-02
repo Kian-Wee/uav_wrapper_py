@@ -7,6 +7,8 @@ import tf2_ros
 import math
 import numpy as np
 from geometry_msgs.msg import TransformStamped
+from transforms3d import _gohlketransforms,euler
+from math import degrees
 
 class tf_publisher():
 
@@ -24,7 +26,7 @@ class tf_publisher():
             rosrate=rospy.Rate(60)
             while not rospy.is_shutdown():
                 self.transform()
-                print("running")
+                #print("running")
                 rosrate.sleep()
 
 
@@ -60,11 +62,10 @@ class tf_publisher():
 
 
                 # Rotation: No changes needed for rotation
-                transform_stamped = self.tfBuffer.lookup_transform("camera", "map", rospy.Time(0))
-                newtransformStamped.transform.rotation.x  = transform_stamped.transform.rotation.x
-                newtransformStamped.transform.rotation.y  = transform_stamped.transform.rotation.y
-                newtransformStamped.transform.rotation.z  = transform_stamped.transform.rotation.z
-                newtransformStamped.transform.rotation.w  = transform_stamped.transform.rotation.w
+                newtransformStamped.transform.rotation.x  = 0#transform_stamped.transform.rotation.x
+                newtransformStamped.transform.rotation.y  = 0#transform_stamped.transform.rotation.y
+                newtransformStamped.transform.rotation.z  = 0#transform_stamped.transform.rotation.z
+                newtransformStamped.transform.rotation.w  = 1#transform_stamped.transform.rotation.w
 
 
                 self.uav_to_body_setpoint_broadcaster.sendTransform(newtransformStamped)
