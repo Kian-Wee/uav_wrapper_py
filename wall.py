@@ -138,36 +138,41 @@ class offboard_node():
                     for i in self.uav.controller_array:
                         if i.name == "aux":
                             thr_val = i.custom_single_controller(self.wall_dist,self.wall_dist)[0]
-                    ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
+                    # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
+                    # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
+                    # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
+                    norm_thrust = ((1 - (self.wall_dist)/(0.5)) * 100)
+                    print(norm_thrust)
+                    ser.write(str.encode(str(norm_thrust)))
 
-                    rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, str(translate(thr_val, 0, aux_kp, 0, 50)))
+                    rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
 
                     if self.wall_dist <= contact_threshold and self.release_stage=="disarmed":
                         rospy.loginfo_throttle_identical(1,"Approached wall, stabilising")
                         self.release_stage= "contact"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         self.wall_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.loginfo_throttle_identical(1,"Touched wall and stabilised, releasing adhesive")
                         self.release_stage= "glue_release"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         self.release_stage= "uv_on"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         self.adh_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
                         self.release_stage="payload_drop"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         self.reset_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(1,"Disarming")
                         self.release_stage="uv_off"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         self.release_stage="payload_reset"
-                        ser.write(str.encode(self.release_stage))
-                        ser.write(str.encode('0')) # Set thruster to 0
+                        ser.write(str.encode(self.release_stage + "\n"))
+                        ser.write(str.encode('0' + "\n")) # Set thruster to 0
                         self.release_stage="disarmed"
-                        ser.write(str.encode(self.release_stage))
+                        ser.write(str.encode(self.release_stage + "\n"))
                         deployment_times +=1
                 else:
                     rospy.loginfo_once("Deployment over")
@@ -207,7 +212,7 @@ class offboard_node():
     
     def quit(self):
         print("Killing node")
-        ser.write(str.encode('D0'))
+        ser.write(str.encode('disarmed' + "\n"))
         ser.close()
         rospy.signal_shutdown("Node shutting down")
 
