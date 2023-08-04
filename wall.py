@@ -19,12 +19,11 @@ import tf2_ros
 # Example code for a multi-staged multi-controller wall approach, to get it close to a wall and then slowly jog in 
 
 
-rate = 60 # Update rate
+rate = 100 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
-cameratobody_x = 0.5 # +ve is forward
-cameratobody_dist = 0.5 # used for range sensor, should be same as cameratobody_x but set to a higher number to allow for less stringent deployment
-contact_threshold = 0.1 # UAV is assumed to be touching the wall at this distance
+cameratobody_dist = 0.5 # used for range sensor, +ve is forward
+contact_threshold = 0.003 # UAV is assumed to be touching the wall at this distance
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="tf"
@@ -34,7 +33,7 @@ world_frame_id="map"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
 threshold_jog=0.5 #m
-threshold_jog_deg=5 #deg
+threshold_jog_deg=5 #deg  
 # Rear Thruster Topic
 thruster_output_topic="/thruster/pwm"
 max_deployment_times = 1
@@ -69,13 +68,13 @@ class offboard_node():
         self.wall_timer=time.time()
         self.wall_dur=3 #s
         self.adh_timer=time.time()
-        self.adh_dur=10 #s
+        self.adh_dur=15 #s
         self.reset_timer=time.time()
         self.reset_dur=1
         self.release_stage="disarmed"
 
         deployment_times = 0
-
+        self.prev_msg=""
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
@@ -141,38 +140,38 @@ class offboard_node():
                     # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
                     # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
-                    norm_thrust = ((1 - (self.wall_dist)/(0.5)) * 100)
-                    print(norm_thrust)
-                    ser.write(str.encode(str(norm_thrust)))
+                    norm_thrust = round(((1 - (self.wall_dist)/(0.5)) * 100)/10)*10
+                    # print(norm_thrust)
+                    self.write_serial(norm_thrust)
 
                     rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
 
                     if self.wall_dist <= contact_threshold and self.release_stage=="disarmed":
                         rospy.loginfo_throttle_identical(1,"Approached wall, stabilising")
                         self.release_stage= "contact"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         self.wall_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.loginfo_throttle_identical(1,"Touched wall and stabilised, releasing adhesive")
                         self.release_stage= "glue_release"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         self.release_stage= "uv_on"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         self.adh_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
                         self.release_stage="payload_drop"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         self.reset_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(1,"Disarming")
                         self.release_stage="uv_off"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         self.release_stage="payload_reset"
-                        ser.write(str.encode(self.release_stage + "\n"))
-                        ser.write(str.encode('0' + "\n")) # Set thruster to 0
+                        self.write_serial(self.release_stage)
+                        self.write_serial('0') # Set thruster to 0
                         self.release_stage="disarmed"
-                        ser.write(str.encode(self.release_stage + "\n"))
+                        self.write_serial(self.release_stage)
                         deployment_times +=1
                 else:
                     rospy.loginfo_once("Deployment over")
@@ -190,6 +189,7 @@ class offboard_node():
 
     def range_callback(self, msg):
         self.wall_dist = msg.range - cameratobody_dist
+        print(self.wall_dist)
 
 
     def send_tf(self, x, y, z, rx, ry, rz, rw):
@@ -208,6 +208,12 @@ class offboard_node():
         self.final_transform.transform.rotation.w  = rw
 
         self.final_setpoint_broadcaster.sendTransform(self.final_transform)
+
+
+    def write_serial(self,msg):
+        if msg != self.prev_msg:
+            ser.write(str.encode(str(msg)+ "\n"))
+
     
     
     def quit(self):
