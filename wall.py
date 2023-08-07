@@ -23,7 +23,7 @@ rate = 100 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_dist = 0.5 # used for range sensor, +ve is forward
-contact_threshold = 0.003 # UAV is assumed to be touching the wall at this distance
+contact_threshold = 0.01 # UAV is assumed to be touching the wall at this distance
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="tf"
@@ -65,16 +65,18 @@ class offboard_node():
         
         rospy.Subscriber('Range_to_wall',Range,self.range_callback)
         self.wall_dist=999
-        self.wall_timer=time.time()
+        self.wall_timer=999999999999999999999999999999
         self.wall_dur=3 #s
-        self.adh_timer=time.time()
-        self.adh_dur=15 #s
-        self.reset_timer=time.time()
+        self.adh_timer=999999999999999999999999999999
+        self.adh_dur=10 #s
+        self.reset_timer=999999999999999999999999999999
         self.reset_dur=1
         self.release_stage="disarmed"
 
         deployment_times = 0
         self.prev_msg=""
+
+        ser.write(str.encode("disarmed\n"))
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
@@ -131,6 +133,8 @@ class offboard_node():
                # Switch to less aggressive nearfield controller when close to wall and start translating
                 elif deployment_times <max_deployment_times:
 
+                    # rospy.loginfo_throttle_identical(0.5,str(deployment_times))
+
                     self.uav.setpoint_controller(self.last_acceptable_setpoint,"close") # Stop reading new setpoints and cache the setpoint
                     self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
                     
@@ -140,12 +144,12 @@ class offboard_node():
                     # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
                     # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
-                    norm_thrust = round(((1 - (self.wall_dist)/(0.5)) * 100)/10)*10
-                    # print(norm_thrust)
+                    norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10
                     self.write_serial(norm_thrust)
 
                     rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
-
+                    # print(self.wall_dist - contact_threshold)
+                    # print(norm_thrust)
                     if self.wall_dist <= contact_threshold and self.release_stage=="disarmed":
                         rospy.loginfo_throttle_identical(1,"Approached wall, stabilising")
                         self.release_stage= "contact"
@@ -189,7 +193,7 @@ class offboard_node():
 
     def range_callback(self, msg):
         self.wall_dist = msg.range - cameratobody_dist
-        print(self.wall_dist)
+        # print(self.wall_dist)
 
 
     def send_tf(self, x, y, z, rx, ry, rz, rw):
@@ -212,7 +216,9 @@ class offboard_node():
 
     def write_serial(self,msg):
         if msg != self.prev_msg:
+            # print(msg)
             ser.write(str.encode(str(msg)+ "\n"))
+            self.prev_msg = msg
 
     
     
