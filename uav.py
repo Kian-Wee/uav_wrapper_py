@@ -82,6 +82,7 @@ class uav():
     def setpoint(self,x,y,z):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
+            msg.header.frame_id="map"
             # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
@@ -113,6 +114,7 @@ class uav():
     def setpoint_yaw(self,x,y,z,yaw):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
+            msg.header.frame_id="map"
             # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y
@@ -131,6 +133,7 @@ class uav():
     def setpoint_quat(self,x,y,z,rx,ry,rz,rw):
         if self.setpoint_topic_type == PoseStamped:
             msg = PoseStamped()
+            msg.header.frame_id="map"
             # msg.header.stamp = rospy.get_time()
             msg.pose.position.x= x
             msg.pose.position.y= y

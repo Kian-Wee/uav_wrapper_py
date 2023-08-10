@@ -49,8 +49,8 @@ class offboard_node():
         self.uav = uav() # Initalise UAV object
         self.uav.init_controller("far",0.5,0.125,0.5,0.125,0.5,0.8,0.25,0.0625) # Initalise additional controllers
         self.uav.init_controller("close",0.1,0.125,0.1,0.125,0.1,0.8,0.15,0.0625)
-        aux_kp=0.2
-        self.uav.init_controller("aux",aux_kp,0)
+        # aux_kp=0.2
+        # self.uav.init_controller("aux",aux_kp,0)
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
         print("Using TF Transforms for setpoints")
@@ -138,9 +138,9 @@ class offboard_node():
                     self.uav.setpoint_controller(self.last_acceptable_setpoint,"close") # Stop reading new setpoints and cache the setpoint
                     self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
                     
-                    for i in self.uav.controller_array:
-                        if i.name == "aux":
-                            thr_val = i.custom_single_controller(self.wall_dist,self.wall_dist)[0]
+                    # for i in self.uav.controller_array:
+                    #     if i.name == "aux":
+                    #         thr_val = i.custom_single_controller(self.wall_dist,self.wall_dist)[0]
                     # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
                     # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
