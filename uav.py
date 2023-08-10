@@ -33,6 +33,7 @@ class uav():
             self.position_listener_callback)
         
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
+        self.global_setpoint_publisher = rospy.Publisher("/mavros/global_position/pose", GeoPoseStamped, queue_size=1)
 
 
     def position_listener_callback(self,msg):
@@ -98,9 +99,9 @@ class uav():
             else:
                 rospy.loginfo_once("Using global setpoints")
                 msg = GeoPoseStamped()
-                msg.pose.position.latitude=self.pos.x
-                msg.pose.position.longitude=self.pos.y
-                msg.pose.position.altitude=self.pos.z
+                msg.pose.position.latitude=x
+                msg.pose.position.longitude=y
+                msg.pose.position.altitude=z
                 # No yaw avaliable for the global_position/global topic
                 # msg.pose.orientation.w = self.pos.rw
                 # msg.pose.orientation.x = self.pos.rx
@@ -108,6 +109,31 @@ class uav():
                 # msg.pose.orientation.z = self.pos.rz
         else:
             rospy.logfatal("Invalid/Unsupported setpoint position message type")
+
+
+    def setpoint_global(self,x,y,z):
+        msg = GeoPoseStamped()
+        msg.header.frame_id="map"
+        msg.pose.position.latitude=x
+        msg.pose.position.longitude=y
+        msg.pose.position.altitude=z
+        self.global_setpoint_publisher(msg)
+
+
+
+
+    # Setpoint survey through an array
+    def survey(self, arr, threshold = 0.1):
+        if len(arr) != 0:
+            for point in arr:
+                if point[0] - self.pos.x < threshold and point[1] - self.pos.y < threshold:
+                    arr.pop[0]
+            self.setpoint_global(point[0],point[1],point[2])
+            return 1
+        else:
+            self.setpoint_global(self.pos.x,self.pos.y,self.pos.z)
+            return 0 # Ended
+
 
 
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
