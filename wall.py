@@ -83,7 +83,16 @@ class offboard_node():
     
         while not rospy.is_shutdown():
 
-            # self.tf_pub.transform()
+            # self.release_stage= "glue_release"
+            # self.write_serial(self.release_stage)
+            # self.release_stage= "disarmed"
+            # self.write_serial(self.release_stage)
+            # self.release_stage= "glue_release"
+            # self.write_serial(self.release_stage)
+            # self.release_stage= "disarmed"
+            # self.write_serial(self.release_stage)
+
+
             try:
                 # TODO , THIS DOESNT WORK WITHIN THE SAME NODE 
                 # Look at the final transform to body_setpoint for final setpoint
@@ -148,7 +157,7 @@ class offboard_node():
                     self.write_serial(norm_thrust)
 
                     rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
-                    # print(self.wall_dist - contact_threshold)
+                    # print(self.wall_dist <= contact_threshold)
                     # print(norm_thrust)
                     if self.wall_dist <= contact_threshold and self.release_stage=="disarmed":
                         rospy.loginfo_throttle_identical(1,"Approached wall, stabilising")
@@ -162,10 +171,10 @@ class offboard_node():
                         self.release_stage= "uv_on"
                         self.write_serial(self.release_stage)
                         self.adh_timer=rospy.get_time()
-                    if (self.wall_dist <= contact_threshold and self.release_stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
+                    if (self.wall_dist <= contact_threshold and (self.release_stage=="uv_on" or self.release_stage=="glue_release") and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
                         self.release_stage="payload_drop"
-                        self.write_serial(self.release_stage)
+                        # self.write_serial(self.release_stage)
                         self.reset_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(1,"Disarming")
@@ -219,6 +228,7 @@ class offboard_node():
             # print(msg)
             ser.write(str.encode(str(msg)+ "\n"))
             self.prev_msg = msg
+            time.sleep(0.075)
 
     
     
