@@ -153,7 +153,8 @@ class offboard_node():
                     # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
                     # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
-                    norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10
+                    norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 50)/10)*10
+                    # round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10
                     self.write_serial(norm_thrust)
 
                     rospy.loginfo_throttle_identical(5,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
@@ -174,7 +175,7 @@ class offboard_node():
                     if (self.wall_dist <= contact_threshold and (self.release_stage=="uv_on" or self.release_stage=="glue_release") and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
                         self.release_stage="payload_drop"
-                        # self.write_serial(self.release_stage)
+                        self.write_serial(self.release_stage)
                         self.reset_timer=rospy.get_time()
                     if (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(1,"Disarming")
