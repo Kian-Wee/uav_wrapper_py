@@ -153,7 +153,7 @@ class offboard_node():
                     # ser.write(str.encode(str(translate(thr_val, 0, aux_kp, 0, 100))))
                     # norm_thrust = (thr_val - 0)/(aux_kp - 0) * (100 - 0) + 0
                     # norm_thrust=100 - (thr_val*aux_kp*100)*5 #Scale rear thrust by wall distance from 0 to 0.5m
-                    norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 50)/10)*10
+                    norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 50)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 50% thrust
                     # round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10
                     self.write_serial(norm_thrust)
 
@@ -165,6 +165,7 @@ class offboard_node():
                         self.release_stage= "contact"
                         self.write_serial(self.release_stage)
                         self.wall_timer=rospy.get_time()
+                        norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
                     if (self.wall_dist <= contact_threshold and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.loginfo_throttle_identical(1,"Touched wall and stabilised, releasing adhesive")
                         self.release_stage= "glue_release"
@@ -172,11 +173,13 @@ class offboard_node():
                         self.release_stage= "uv_on"
                         self.write_serial(self.release_stage)
                         self.adh_timer=rospy.get_time()
+                        norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
                     if (self.wall_dist <= contact_threshold and (self.release_stage=="uv_on" or self.release_stage=="glue_release") and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
                         self.release_stage="payload_drop"
                         self.write_serial(self.release_stage)
                         self.reset_timer=rospy.get_time()
+                        norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 100)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
                     if (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(1,"Disarming")
                         self.release_stage="uv_off"
@@ -189,6 +192,9 @@ class offboard_node():
                         deployment_times +=1
                 else:
                     rospy.loginfo_once("Deployment over")
+                    self.uav.setpoint_controller(self.last_acceptable_setpoint,"close") # Stop reading new setpoints and cache the setpoint
+                    self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
+                    
 
             # Approach setpoint with aggressive controller when far 
             else:
