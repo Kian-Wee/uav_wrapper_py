@@ -12,7 +12,7 @@ from math import degrees
 
 class tf_publisher():
 
-        def __init__(self, distance=0.5, uav_frame_id="moose",camera_frame_id="camera",target_frame_id="body_setpoint", global_frame_id="map", hover_height=1.2):
+        def __init__(self, distance=0.5005, uav_frame_id="moose",camera_frame_id="camera",target_frame_id="body_setpoint", global_frame_id="map", hover_height=1.2):
             self.tfBuffer = tf2_ros.Buffer()
             self.listener = tf2_ros.TransformListener(self.tfBuffer)
             self.uav_to_body_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
@@ -30,7 +30,7 @@ class tf_publisher():
                 rosrate.sleep()
 
 
-        def init_variables(self, distance=0.5, uav_frame_id="moose",camera_frame_id="camera",target_frame_id="body_setpoint", global_frame_id="map", hover_height=1.2):
+        def init_variables(self, distance=0.5005, uav_frame_id="moose",camera_frame_id="camera",target_frame_id="body_setpoint", global_frame_id="map", hover_height=1.2):
             self.uav_frame_id=uav_frame_id
             self.camera_frame_id=camera_frame_id
             self.target_frame_id=target_frame_id
