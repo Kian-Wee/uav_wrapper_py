@@ -14,6 +14,14 @@ from sensor_msgs.msg import Range
 import time
 import coordinates
 
+# 1) the egm96-5.pgm file from geographiclib.
+# To get it on Ubuntu run:
+# sudo apt install geographiclib-tools
+# sudo geographiclib-get-geoids egm96-5
+#
+# 2) PyGeodesy
+# To get it using pip:
+# pip install PyGeodesy
 from pygeodesy.geoids import GeoidPGM
 
 _egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
@@ -140,17 +148,18 @@ class offboard_node():
             # Camera detected droppoint, switching from GPS to local setpoint mode
             elif self.detected == True :
                 self.uav.setpoint_controller(self.camera_setpoint,"far")
+                rospy.loginfo_throttle_identical(2,"UAV moving to Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                 # At drop point, dropping payload
                 if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
-                    rospy.loginfo_once("UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
+                    rospy.loginfo_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     if deployment_times <max_deployment_times:
                         if (self.release_stage=="disarmed"):
-                            rospy.loginfo_once("Dropping payload")
+                            rospy.loginfo_throttle_identical(2,"Releasing Payload")
                             self.release_stage="payload_drop"
                             # ser.write(str.encode(self.release_stage))
                             self.reset_timer=rospy.get_time()
                         if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
-                            rospy.loginfo_once("Disarming")
+                            rospy.loginfo_throttle_identical(2,"Disarming")
                             self.release_stage="payload_reset"
                             # ser.write(str.encode(self.release_stage))
                             # ser.write(str.encode("0"))
@@ -165,8 +174,9 @@ class offboard_node():
                 msg=GeoPoseStamped()
                 msg.pose.position.latitude=self.latitude
                 msg.pose.position.longitude=self.longitude
-                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
+                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) # GPS altitude drifts too much to be used, assume drone starts at hover height
                 self.global_setpoint_publisher.publish(msg)
+                rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, msg.pose.position.altitude)
 
             self.rosrate.sleep()
 
@@ -220,6 +230,7 @@ class offboard_node():
         self.longitude = msg.longitude
         self.altitude = msg.altitude
 
+
     def quit(self):
         print("Killing node")
         # ser.write(str.encode('0'))
@@ -234,34 +245,3 @@ if __name__ == '__main__':
     node = offboard_node()
 
     rospy.spin()
-
-
-#!/usr/bin/env python3
-# Example code that helps you convert between AMSL and ellipsoid height
-# To run this code you need:
-#
-# 1) the egm96-5.pgm file from geographiclib.
-# To get it on Ubuntu run:
-# sudo apt install geographiclib-tools
-# sudo geographiclib-get-geoids egm96-5
-#
-# 2) PyGeodesy
-# To get it using pip:
-# pip install PyGeodesy
-
-
-
-def geoid_height(lat, lon):
-    """Calculates AMSL to ellipsoid conversion offset.
-    Uses EGM96 data with 5' grid and cubic interpolation.
-    The value returned can help you convert from meters 
-    above mean sea level (AMSL) to meters above
-    the WGS84 ellipsoid.
-
-    If you want to go from AMSL to ellipsoid height, add the value.
-
-    To go from ellipsoid height to AMSL, subtract this value.
-    """
-    return _egm96.height(lat, lon)
-
-# ellipsoid height to AMSL
