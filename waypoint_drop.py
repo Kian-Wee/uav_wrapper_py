@@ -4,6 +4,7 @@ import rospy
 from uav import uav, uav_variables
 from geometry_msgs.msg import PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
+from sensor_msgs.msg import NavSatFix
 from tf2_msgs.msg import TFMessage
 import tf
 from math import degrees
@@ -13,7 +14,9 @@ from sensor_msgs.msg import Range
 import time
 import coordinates
 
-# Example code for a multi-staged multi-controller wall approach, to get it close to a wall and then slowly jog in 
+from pygeodesy.geoids import GeoidPGM
+
+_egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 
 rate = 60 # Update rate
 
@@ -31,7 +34,7 @@ threshold_jog=0.1 #m
 threshold_jog_deg=10 #deg
 max_deployment_times = 1
 
-ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
+# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
 
 class offboard_node():
@@ -77,8 +80,35 @@ class offboard_node():
         rospy.on_shutdown(self.quit)
 
         self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
-    
+
+        rospy.Subscriber("/mavros/global_position/global",NavSatFix,self.global_pos_callback)
+
         while not rospy.is_shutdown():
+
+            # msg=GeoPoseStamped()
+            # msg.pose.position.latitude=self.latitude
+            # msg.pose.position.longitude=self.longitude
+            # msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
+            # self.global_setpoint_publisher.publish(msg)
+
+            # t=time.time()
+            # while (time.time()<t+5):
+            #     msg=GeoPoseStamped()
+            #     msg.pose.position.latitude=self.latitude
+            #     msg.pose.position.longitude=self.longitude
+            #     msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
+            #     self.global_setpoint_publisher.publish(msg)
+            #     self.rosrate.sleep()
+
+            # s=time.time()
+            # while (time.time()<s+5):
+            #     msg=PoseStamped()
+            #     msg.pose.position.x=self.uav.pos.x
+            #     msg.pose.position.y=self.uav.pos.y
+            #     msg.pose.position.z=self.uav.pos.z
+            #     self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+            #     self.rosrate.sleep()
+
 
             local_to_base_broadcaster.sendTransform((self.pos.x, self.pos.y, self.pos.z),
                     (self.pos.rx,self.pos.ry,self.pos.rz,self.pos.rw),
@@ -117,15 +147,15 @@ class offboard_node():
                         if (self.release_stage=="disarmed"):
                             rospy.loginfo_once("Dropping payload")
                             self.release_stage="payload_drop"
-                            ser.write(str.encode(self.release_stage))
+                            # ser.write(str.encode(self.release_stage))
                             self.reset_timer=rospy.get_time()
                         if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_once("Disarming")
                             self.release_stage="payload_reset"
-                            ser.write(str.encode(self.release_stage))
-                            ser.write(str.encode("0"))
+                            # ser.write(str.encode(self.release_stage))
+                            # ser.write(str.encode("0"))
                             self.release_stage="disarmed"
-                            ser.write(str.encode(self.release_stage))
+                            # ser.write(str.encode(self.release_stage))
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
@@ -135,7 +165,7 @@ class offboard_node():
                 msg=GeoPoseStamped()
                 msg.pose.position.latitude=self.latitude
                 msg.pose.position.longitude=self.longitude
-                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) + payload_drop_height
+                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
                 self.global_setpoint_publisher.publish(msg)
 
             self.rosrate.sleep()
@@ -184,10 +214,16 @@ class offboard_node():
         self.pos.ry = msg.pose.orientation.y
         self.pos.rz = msg.pose.orientation.z
 
+
+    def global_pos_callback(self,msg):
+        self.latitude = msg.latitude
+        self.longitude = msg.longitude
+        self.altitude = msg.altitude
+
     def quit(self):
         print("Killing node")
-        ser.write(str.encode('0'))
-        ser.close()
+        # ser.write(str.encode('0'))
+        # ser.close()
         rospy.signal_shutdown("Node shutting down")
 
 
@@ -213,9 +249,7 @@ if __name__ == '__main__':
 # To get it using pip:
 # pip install PyGeodesy
 
-from pygeodesy.geoids import GeoidPGM
 
-_egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 
 def geoid_height(lat, lon):
     """Calculates AMSL to ellipsoid conversion offset.
