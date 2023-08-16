@@ -4,14 +4,11 @@ import rospy
 from uav import uav, uav_variables
 from geometry_msgs.msg import PoseStamped
 from tf2_msgs.msg import TFMessage
-import tf
 from math import degrees
 from transforms3d import _gohlketransforms,euler
 import serial
-import math
 from sensor_msgs.msg import Range
 import time
-import numpy as np
 import numpy as np
 from tf_publisher import tf_publisher
 import tf2_ros
