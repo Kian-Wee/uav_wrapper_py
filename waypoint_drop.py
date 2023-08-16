@@ -13,6 +13,7 @@ import serial
 from sensor_msgs.msg import Range
 import time
 import coordinates
+import tf2_ros
 
 # 1) the egm96-5.pgm file from geographiclib.
 # To get it on Ubuntu run:
@@ -30,12 +31,12 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
-payload_drop_height=1.2
+payload_drop_height=0.6
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="/tf"
 camera_frame_id="/pole"
-world_frame_id="/local"
+base_frame_id="/base_link"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
 threshold_jog=0.1 #m
@@ -51,7 +52,7 @@ class offboard_node():
         print("Initalising Offboard Waypoint Drop Node")
 
         self.uav = uav() # Initalise UAV object
-        self.uav.init_controller("far",0.5,0.125,0.5,0.125,0.5,0.8,0.25,0.0625) # Initalise additional controllers
+        self.uav.init_controller("close",1,0.125,1,0.125,1,0.8,0.5,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
         self.latitude=coordinates.latitude
@@ -73,7 +74,7 @@ class offboard_node():
         
         print("Using " + camera_setpoint_topic + " setpoint topic")
 
-        local_to_base_broadcaster = tf.TransformBroadcaster()
+        camera_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
         rospy.Subscriber("/mavros/local_position/pose",PoseStamped,self.local_pos_callback)
         self.pos=uav_variables()
 
@@ -118,14 +119,13 @@ class offboard_node():
             #     self.rosrate.sleep()
 
 
-            local_to_base_broadcaster.sendTransform((self.pos.x, self.pos.y, self.pos.z),
-                    (self.pos.rx,self.pos.ry,self.pos.rz,self.pos.rw),
-                    rospy.Time.now(),
-                    "base_link",
-                    "local")
+
 
             try:
-                (trans,rot)=self.listener.lookupTransform(camera_frame_id, world_frame_id, rospy.Time(0))
+                (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
+
+                rospy.loginfo_once("Detected Transform from camera")
+
                 self.camera_setpoint.x = trans[0]+self.uav.pos.x
                 self.camera_setpoint.y = trans[1]+self.uav.pos.y
                 self.camera_setpoint.z = trans[2]+self.uav.pos.z + payload_drop_height
@@ -134,9 +134,23 @@ class offboard_node():
                 self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
                 self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
                 self.detected = True
-                rospy.loginfo_once("Detected Transform from camera")
+
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 rospy.logdebug("Missing tf transform")
+
+            # Send out position for visualisation
+            self.final_transform= tf2_ros.TransformStamped()
+            self.final_transform.header.frame_id = "map"
+            self.final_transform.header.stamp = rospy.get_rostime()
+            self.final_transform.child_frame_id = "camera_setpoint"
+            self.final_transform.transform.translation.x = self.camera_setpoint.x
+            self.final_transform.transform.translation.y = self.camera_setpoint.y
+            self.final_transform.transform.translation.z = self.camera_setpoint.z
+            self.final_transform.transform.rotation.x  = self.camera_setpoint.rx
+            self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
+            self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
+            self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
+            camera_setpoint_broadcaster.sendTransform(self.final_transform)
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
@@ -147,8 +161,9 @@ class offboard_node():
             
             # Camera detected droppoint, switching from GPS to local setpoint mode
             elif self.detected == True :
-                self.uav.setpoint_controller(self.camera_setpoint,"far")
-                rospy.loginfo_throttle_identical(2,"UAV moving to Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
+                rospy.logwarn_once("Detected Transform")
+                self.uav.setpoint_controller(self.camera_setpoint,"close")
+                rospy.loginfo_throttle_identical(2,"UAV moving to Camera Setpoint[%s,%s,%s] from [%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
                 # At drop point, dropping payload
                 if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
                     rospy.loginfo_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
@@ -171,12 +186,13 @@ class offboard_node():
  
             # Drone not at GPS Setpoint, send global coordinates
             else:
-                msg=GeoPoseStamped()
-                msg.pose.position.latitude=self.latitude
-                msg.pose.position.longitude=self.longitude
-                msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) # GPS altitude drifts too much to be used, assume drone starts at hover height
-                self.global_setpoint_publisher.publish(msg)
-                rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, msg.pose.position.altitude)
+                # msg=GeoPoseStamped()
+                # msg.pose.position.latitude=self.latitude
+                # msg.pose.position.longitude=self.longitude
+                # msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) # GPS altitude drifts too much to be used, assume drone starts at hover height
+                # self.global_setpoint_publisher.publish(msg)
+                self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+                # rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, msg.pose.position.altitude)
 
             self.rosrate.sleep()
 
@@ -186,7 +202,7 @@ class offboard_node():
                 # If TF is used as the as the position
         # if msg._type=="tf2_msgs/TFMessage":
         #     print(msg.transforms[0].header.frame_id,msg.transforms[0].child_frame_id)
-        #     if msg.transforms[0].header.frame_id == world_frame_id and msg.transforms[0].child_frame_id == camera_frame_id:
+        #     if msg.transforms[0].header.frame_id == base_frame_id and msg.transforms[0].child_frame_id == camera_frame_id:
         #         self.camera_setpoint.x = msg.transforms[0].transform.translation.x
         #         self.camera_setpoint.y = msg.transforms[0].transform.translation.y
         #         self.camera_setpoint.z = msg.transforms[0].transform.translation.z
