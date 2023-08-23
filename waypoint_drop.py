@@ -58,6 +58,7 @@ class offboard_node():
         self.setpoint_latitude=coordinates.latitude
         self.setpoint_longitude=coordinates.longitude
         # self.setpoint_altitude=coordinates.altitude
+        self.survey_array=coordinates.waypoint_array
 
         if camera_setpoint_topic != "/tf":
             rospy.Subscriber(
@@ -77,11 +78,11 @@ class offboard_node():
         camera_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
         rospy.Subscriber("/mavros/local_position/pose",PoseStamped,self.local_pos_callback)
         self.pos=uav_variables()
+        self.prev_msg=""
 
         self.reset_timer=time.time()
         self.reset_dur=1
         self.stage="survey"
-        # self.survey_array=[]
 
         deployment_times = 0
         self.detected = False
@@ -125,17 +126,18 @@ class offboard_node():
             self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
             self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
             self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
-            camera_setpoint_broadcaster.sendTransform(self.final_transform)
+            # camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
 
-            # No setpoint sent yet
-            if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
-                self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
+
+            # # No setpoint sent yet
+            # if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
+            #     self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
             
             # Camera detected droppoint, switching from GPS to local setpoint mode
-            elif self.detected == True :
+            if self.detected == True :
                 rospy.logwarn_once("Detected Transform")
                 self.uav.setpoint_controller(self.camera_setpoint,"close")
                 rospy.loginfo_throttle_identical(2,"UAV moving to Camera Setpoint[%s,%s,%s] from [%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
@@ -161,11 +163,11 @@ class offboard_node():
             # Drone not at GPS Setpoint, send global coordinates
             else:
                 if self.stage=="disarmed":
-                    self.uav.setpoint_global(self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
-                    rospy.loginfo_throttle_identical(1,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude))
+                    self.uav.setpoint_global(self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
+                    rospy.loginfo_throttle_identical(1,"Sending GPS Setpoint[%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
                 elif self.stage=="survey":
-                    # self.uav.survey(self.waypoint_array)
-                    rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude))
+                    self.uav.survey(self.survey_array)
+                    rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
 
             self.rosrate.sleep()
 
@@ -215,9 +217,10 @@ class offboard_node():
 
 
     def global_pos_callback(self,msg):
-        self.latitude = msg.latitude
-        self.longitude = msg.longitude
-        self.altitude = msg.altitude
+        pass
+        # self.uav.global_pos.x = msg.latitude
+        # self.uav.global_pos.y = msg.longitude
+        # self.uav.global_pos.z = msg.altitude
 
 
     def write_serial(self,msg):
