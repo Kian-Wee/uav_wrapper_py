@@ -32,8 +32,11 @@ class uav():
             position_topic_type,
             self.position_listener_callback)
         
+        self.global_pos=uav_variables()
+        rospy.Subscriber("/mavros/global_position/global",NavSatFix,self.global_pos_callback)
+        
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
-        self.global_setpoint_publisher = rospy.Publisher("/mavros/global_position/pose", GeoPoseStamped, queue_size=1)
+        self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
 
 
     def position_listener_callback(self,msg):
@@ -117,7 +120,13 @@ class uav():
         msg.pose.position.latitude=x
         msg.pose.position.longitude=y
         msg.pose.position.altitude=z
-        self.global_setpoint_publisher(msg)
+        self.global_setpoint_publisher.publish(msg)
+
+
+    def global_pos_callback(self,msg):
+        self.global_pos.x = msg.latitude
+        self.global_pos.y = msg.longitude
+        self.global_pos.z = msg.altitude
 
 
     # Setpoint survey through an array
@@ -125,11 +134,11 @@ class uav():
         if len(arr) != 0:
             for point in arr:
                 if point[0] - self.pos.x < threshold and point[1] - self.pos.y < threshold:
-                    arr.pop[0]
-            self.setpoint_global(point[0],point[1],point[2])
+                    arr.pop[0] #TODO, NEEDS INHERITANCE FIXING
+            self.setpoint_global(point[0],point[1],self.global_pos.z)
             return 1
         else:
-            self.setpoint_global(self.pos.x,self.pos.y,self.pos.z)
+            self.setpoint_global(self.global_pos.x,self.global_pos.y,self.global_pos.z)
             return 0 # Ended
 
 
