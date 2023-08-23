@@ -55,9 +55,9 @@ class offboard_node():
         self.uav.init_controller("close",1,0.125,1,0.125,1,0.8,0.5,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
-        self.latitude=coordinates.latitude
-        self.longitude=coordinates.longitude
-        self.altitude=coordinates.altitude
+        self.setpoint_latitude=coordinates.latitude
+        self.setpoint_longitude=coordinates.longitude
+        # self.setpoint_altitude=coordinates.altitude
 
         if camera_setpoint_topic != "/tf":
             rospy.Subscriber(
@@ -80,7 +80,8 @@ class offboard_node():
 
         self.reset_timer=time.time()
         self.reset_dur=1
-        self.release_stage="disarmed"
+        self.stage="survey"
+        # self.survey_array=[]
 
         deployment_times = 0
         self.detected = False
@@ -88,39 +89,13 @@ class offboard_node():
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
 
-        self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
-
         rospy.Subscriber("/mavros/global_position/global",NavSatFix,self.global_pos_callback)
+
 
         while not rospy.is_shutdown():
 
-            # msg=GeoPoseStamped()
-            # msg.pose.position.latitude=self.latitude
-            # msg.pose.position.longitude=self.longitude
-            # msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
-            # self.global_setpoint_publisher.publish(msg)
 
-            # t=time.time()
-            # while (time.time()<t+5):
-            #     msg=GeoPoseStamped()
-            #     msg.pose.position.latitude=self.latitude
-            #     msg.pose.position.longitude=self.longitude
-            #     msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude)
-            #     self.global_setpoint_publisher.publish(msg)
-            #     self.rosrate.sleep()
-
-            # s=time.time()
-            # while (time.time()<s+5):
-            #     msg=PoseStamped()
-            #     msg.pose.position.x=self.uav.pos.x
-            #     msg.pose.position.y=self.uav.pos.y
-            #     msg.pose.position.z=self.uav.pos.z
-            #     self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
-            #     self.rosrate.sleep()
-
-
-
-
+            # Constantly poll to see if transform is found to object and align to it thereafter
             try:
                 (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
 
@@ -168,38 +143,36 @@ class offboard_node():
                 if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
                     rospy.loginfo_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     if deployment_times <max_deployment_times:
-                        if (self.release_stage=="disarmed"):
+                        if (self.stage=="disarmed" or self.stage=="survey"):
                             rospy.loginfo_throttle_identical(2,"Releasing Payload")
-                            self.release_stage="payload_drop"
-                            # ser.write(str.encode(self.release_stage))
+                            self.stage="payload_drop"
+                            self.write_serial(self.stage)
                             self.reset_timer=rospy.get_time()
-                        if (self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
+                        if (self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_throttle_identical(2,"Disarming")
-                            self.release_stage="payload_reset"
-                            # ser.write(str.encode(self.release_stage))
-                            # ser.write(str.encode("0"))
-                            self.release_stage="disarmed"
-                            # ser.write(str.encode(self.release_stage))
+                            # self.stage="payload_reset"
+                            # self.write_serial(self.stage)
+                            self.stage="disarmed"
+                            self.write_serial(self.stage)
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
  
             # Drone not at GPS Setpoint, send global coordinates
             else:
-                # msg=GeoPoseStamped()
-                # msg.pose.position.latitude=self.latitude
-                # msg.pose.position.longitude=self.longitude
-                # msg.pose.position.altitude=self.altitude-_egm96.height(self.latitude, self.longitude) # GPS altitude drifts too much to be used, assume drone starts at hover height
-                # self.global_setpoint_publisher.publish(msg)
-                self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
-                # rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, msg.pose.position.altitude)
+                if self.stage=="disarmed":
+                    self.uav.setpoint_global(self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
+                    rospy.loginfo_throttle_identical(1,"Sending GPS Setpoint[%s,%s,%s]", self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude))
+                elif self.stage=="survey":
+                    # self.uav.survey(self.waypoint_array)
+                    rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.latitude, self.longitude, self.altitude-_egm96.height(self.latitude, self.longitude))
 
             self.rosrate.sleep()
 
 
     def camera_listener_callback(self, msg):
         rospy.loginfo("New Camera setpoint(x:"+str(msg.pose.position.x)+", y:"+str(msg.pose.position.y)+", z:"+str(msg.pose.position.z)+")")
-                # If TF is used as the as the position
+        # If TF is used as the as the position
         # if msg._type=="tf2_msgs/TFMessage":
         #     print(msg.transforms[0].header.frame_id,msg.transforms[0].child_frame_id)
         #     if msg.transforms[0].header.frame_id == base_frame_id and msg.transforms[0].child_frame_id == camera_frame_id:
@@ -247,9 +220,16 @@ class offboard_node():
         self.altitude = msg.altitude
 
 
+    def write_serial(self,msg):
+        if msg != self.prev_msg:
+            # ser.write(str.encode(str(msg)+ "\n"))
+            self.prev_msg = msg
+            time.sleep(0.075) # Needed for ESP32C3 to read consecutive serial commands
+
+
     def quit(self):
         print("Killing node")
-        # ser.write(str.encode('0'))
+        self.write_serial("disarmed")
         # ser.close()
         rospy.signal_shutdown("Node shutting down")
 
