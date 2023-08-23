@@ -120,8 +120,6 @@ class uav():
         self.global_setpoint_publisher(msg)
 
 
-
-
     # Setpoint survey through an array
     def survey(self, arr, threshold = 0.1):
         if len(arr) != 0:
@@ -133,7 +131,6 @@ class uav():
         else:
             self.setpoint_global(self.pos.x,self.pos.y,self.pos.z)
             return 0 # Ended
-
 
 
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
