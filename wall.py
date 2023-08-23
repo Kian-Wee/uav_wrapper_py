@@ -71,36 +71,23 @@ class offboard_node():
         self.adh_dur=15 #s
         self.reset_timer=999999999999999999999999999999
         self.reset_dur=1
-        self.release_stage="disarmed"
+        
+        self.stage="disarmed"
+        self.write_serial(self.stage)
 
         deployment_times = 0
         self.prev_msg=""
-
-        ser.write(str.encode("disarmed\n"))
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
     
         while not rospy.is_shutdown():
 
-            # self.release_stage= "glue_release"
-            # self.write_serial(self.release_stage)
-            # self.release_stage= "disarmed"
-            # self.write_serial(self.release_stage)
-            # self.release_stage= "glue_release"
-            # self.write_serial(self.release_stage)
-            # self.release_stage= "disarmed"
-            # self.write_serial(self.release_stage)
-
-
+            
             try:
-                # TODO , THIS DOESNT WORK WITHIN THE SAME NODE 
+                # TODO Sending a tf transform and looking it up doesn't work in the same node for some reason
                 # Look at the final transform to body_setpoint for final setpoint
-                # print("hihi")
-                # transform_stamped = self.tfBuffer.lookup_transform("body_setpoint", "map", rospy.Time(0), rospy.Duration(0.1))
                 transform_stamped = self.tfBuffer.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
-                # print("byebye")
-                # rospy.loginfo_throttle(1, str(transform_stamped))
                 self.camera_setpoint.x = transform_stamped.transform.translation.x
                 self.camera_setpoint.y = transform_stamped.transform.translation.y
                 self.camera_setpoint.z = hover_height
@@ -109,7 +96,6 @@ class offboard_node():
                 self.camera_setpoint.rz = transform_stamped.transform.rotation.z
                 self.camera_setpoint.rw = transform_stamped.transform.rotation.w
                 # print(self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz,self.camera_setpoint.rw)
-                # print("read %s", transform_stamped.transform.rotation.z)
 
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 rospy.logdebug("Missing body setpoint tf transform")
@@ -117,16 +103,32 @@ class offboard_node():
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
-            
+
+
+            # Callback the local uav pos as a setpoint when needed to tell the uav to hover on the spot at a certain height
+            self.uav_pos_setpoint=uav_variables()
+            self.uav_pos_setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
+            self.uav_pos_setpoint.y=self.uav.pos.y
+            self.uav_pos_setpoint.z=hover_height
+            self.uav_pos_setpoint.rx=self.uav.pos.rx
+            self.uav_pos_setpoint.ry=self.uav.pos.ry
+            self.uav_pos_setpoint.rz=self.uav.pos.rz
+            self.uav_pos_setpoint.rw=self.uav.pos.rw
+
 
             # No setpoint sent yet
             if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
                 rospy.loginfo_throttle_identical(2, "Missing setpoint/tf, hovering at current location")
                 self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
                 self.send_tf(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw)
+            # Wait for UAV to get to altitude first
+            elif self.stage == "disarmed":
+                self.uav.setpoint_controller(self.uav_pos_setpoint,"far") # Ascent to altitude at current position
+                if abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog/2:
+                    self.stage = "hovering"
             elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog:  #and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog
                 rospy.loginfo_throttle_identical(3,"Setpoint[%s,%s,%s] close to drone, jogging it inwards based on past position",self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z)
-                 # Stop and yaw on the spot with less agressive nearfield controller when close to wall
+                 # Stop and yaw on the spot with less aggressive nearfield controller when close to wall
                 if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
                     rospy.loginfo_throttle_identical(1,"Yawing towards setpoint, [%s] degrees away",degrees(abs(setpoint_yaw-current_yaw)))
                     self.yaw_setpoint=uav_variables()
@@ -148,119 +150,71 @@ class offboard_node():
                     #         thr_val = i.custom_single_controller(self.wall_dist,self.wall_dist)[0]
                     norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 70)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 50% thrust
                     
-                    
 
-                    if self.wall_dist <= contact_threshold and self.release_stage=="disarmed":
+                    if self.wall_dist <= contact_threshold and self.stage=="hovering":
                         rospy.loginfo_throttle_identical(1,"Approached wall, stabilising")
-                        self.release_stage= "contact"
-                        self.write_serial(self.release_stage)
-
+                        self.stage= "contact"
+                        self.write_serial(self.stage)
                         norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z==hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+                        
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                         self.wall_timer=rospy.get_time()
 
-                    elif (self.wall_dist <= contact_threshold and self.release_stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
+                    elif (self.wall_dist <= contact_threshold and self.stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.loginfo_throttle_identical(1,"Touched wall and stabilised, releasing adhesive")
-                        self.release_stage= "glue_release"
-                        self.write_serial(self.release_stage)
+                        self.stage= "glue_release"
+                        self.write_serial(self.stage)
                         norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
 
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z=hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                         self.servo_timer=rospy.get_time()
 
-                    elif (self.wall_dist <= contact_threshold and self.release_stage=="glue_release" and time.time()>=self.servo_timer+self.servo_dur):
+                    elif (self.wall_dist <= contact_threshold and self.stage=="glue_release" and time.time()>=self.servo_timer+self.servo_dur):
                         rospy.loginfo_throttle_identical(0.5,"Adhesive Released, turning on LED")
-                        self.release_stage= "uv_on"
-                        self.write_serial(self.release_stage)
+                        self.stage= "uv_on"
+                        self.write_serial(self.stage)
                         norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
 
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z=hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                         self.adh_timer=rospy.get_time()
                         
-                    elif (self.wall_dist <= contact_threshold and self.release_stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
+                    elif (self.wall_dist <= contact_threshold and self.stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.loginfo_throttle_identical(1,"Dropping payload")
-                        self.release_stage="payload_drop"
-                        self.write_serial(self.release_stage)
+                        self.stage="payload_drop"
+                        self.write_serial(self.stage)
                         norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
 
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z=hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                         self.reset_timer=rospy.get_time()
 
-                    elif (self.wall_dist <= contact_threshold and self.release_stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
+                    elif (self.wall_dist <= contact_threshold and self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.loginfo_throttle_identical(0.5,"Disarming")
-                        self.release_stage="uv_off"
-                        self.write_serial(self.release_stage)
-                        self.release_stage="payload_reset"
-                        self.write_serial(self.release_stage)
+                        self.stage="uv_off"
+                        self.write_serial(self.stage)
+                        self.stage="payload_reset"
+                        self.write_serial(self.stage)
                         self.write_serial('0') # Set thruster to 0
                         norm_thrust = 0
-                        self.release_stage="disarmed"
-                        self.write_serial(self.release_stage)
+                        self.stage="disarmed"
+                        self.write_serial(self.stage)
                         deployment_times +=1
 
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z=hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
-                    # Inbetween deployment stages, it gets told to hover at the current position
+                    # In between deployment stages, it gets told to hover at the current position
                     else:
-                        self.setpoint=uav_variables()
-                        self.setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-                        self.setpoint.y=self.uav.pos.y
-                        self.setpoint.z=hover_height
-                        self.setpoint.rx=self.uav.pos.rx
-                        self.setpoint.ry=self.uav.pos.ry
-                        self.setpoint.rz=self.uav.pos.rz
-                        self.setpoint.rw=self.uav.pos.rw
-                        self.uav.setpoint_controller(self.setpoint,"close")
-                        self.send_tf(self.setpoint.x,self.setpoint.y,self.setpoint.z,self.setpoint.rx,self.setpoint.ry,self.setpoint.rz,self.setpoint.rw)
+
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                     rospy.loginfo_throttle_identical(2,"<--------Yaw within margin. Wall @ [%s], Moving with rear thruster @ [%s]", self.wall_dist, norm_thrust)
                     self.write_serial(norm_thrust)
@@ -270,7 +224,7 @@ class offboard_node():
                     self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
                     
 
-            # Approach setpoint with aggressive controller when far 
+            # Approach setpoint with an aggressive controller when far 
             else:
                 rospy.loginfo_throttle_identical(2,"Setpoint far from drone, using controller %s",self.uav.pos.x)
                 self.last_acceptable_setpoint = self.camera_setpoint
@@ -306,31 +260,16 @@ class offboard_node():
 
     def write_serial(self,msg):
         if msg != self.prev_msg:
-            # print(msg)
             ser.write(str.encode(str(msg)+ "\n"))
             self.prev_msg = msg
-            time.sleep(0.075)
+            time.sleep(0.075) # Needed for ESP32C3 to read consecutive serial commands
 
-    
     
     def quit(self):
         print("Killing node")
         ser.write(str.encode('disarmed' + "\n"))
         ser.close()
         rospy.signal_shutdown("Node shutting down")
-
-
-def translate(value, leftMin, leftMax, rightMin, rightMax):
-    # Figure out how 'wide' each range is
-    leftSpan = leftMax - leftMin
-    rightSpan = rightMax - rightMin
-
-    # Convert the left range into a 0-1 range (float)
-    valueScaled = float(value - leftMin) / float(leftSpan)
-
-    # Convert the 0-1 range into a value in the right range.
-    return rightMin + (valueScaled * rightSpan)
-
 
 
 if __name__ == '__main__':
