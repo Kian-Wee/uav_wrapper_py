@@ -140,11 +140,10 @@ class uav():
     def survey(self, threshold = 0.0000001):
         if len(self.survey_array) != 0:
             self.setpoint_global(self.survey_array[0][0],self.survey_array[0][1],self.global_pos.z) # Return first position in the array
-            for point in self.survey_array:
-                if abs(point[0] - self.global_pos.x) < threshold and abs(point[1] - self.global_pos.y) < threshold:
-                    print("Survey array" + str(self.survey_array))
-                    print(len(self.survey_array))
-                    self.survey_array.pop(0)
+            if abs(self.survey_array[0][0] - self.global_pos.x) < threshold and abs(self.survey_array[0][1] - self.global_pos.y) < threshold:
+                print("Survey array" + str(self.survey_array))
+                print(len(self.survey_array))
+                self.survey_array.pop(0)
             return 1
         else:
             self.setpoint_global(self.global_pos.x,self.global_pos.y,self.global_pos.z)
