@@ -9,6 +9,8 @@ from sensor_msgs.msg import NavSatFix
 from transforms3d import _gohlketransforms,euler
 import tf
 from controller import controller
+from pygeodesy.geoids import GeoidPGM
+_egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 
 
 # This class is a wrapper to simplify common setpoint sending and position callbacks to make the main script more readable, espically when implementing other logic on the main script
@@ -121,21 +123,27 @@ class uav():
         msg.pose.position.latitude=x
         msg.pose.position.longitude=y
         msg.pose.position.altitude=z
+        msg.pose.orientation.w = self.pos.rw
+        msg.pose.orientation.x = self.pos.rx
+        msg.pose.orientation.y = self.pos.ry
+        msg.pose.orientation.z = self.pos.rz
         self.global_setpoint_publisher.publish(msg)
 
 
     def global_pos_callback(self,msg):
         self.global_pos.x = msg.latitude
         self.global_pos.y = msg.longitude
-        self.global_pos.z = msg.altitude
+        self.global_pos.z = msg.altitude -_egm96.height(msg.latitude, msg.longitude)
 
-
+    
     # Setpoint survey through an array
-    def survey(self, threshold = 0.1):
+    def survey(self, threshold = 0.0000001):
         if len(self.survey_array) != 0:
             for point in self.survey_array:
-                if point[0] - self.pos.x < threshold and point[1] - self.pos.y < threshold:
-                    self.survey_array.pop[0] #TODO, NEEDS INHERITANCE FIXING
+                if abs(point[0] - self.global_pos.x) < threshold and abs(point[1] - self.global_pos.y) < threshold:
+                    print("Survey array" + str(self.survey_array))
+                    print(len(self.survey_array))
+                    self.survey_array.pop(0)
             self.setpoint_global(point[0],point[1],self.global_pos.z)
             return 1
         else:
