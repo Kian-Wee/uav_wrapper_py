@@ -17,7 +17,7 @@ class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
     def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
-                 name="",tf_world_frame="/world",tf_drone_frame="/drone"):
+                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[]):
         self.position_topic=name+position_topic
         self.setpoint_topic=name+setpoint_topic
         self.tf_world_frame=name+tf_world_frame
@@ -25,6 +25,7 @@ class uav():
         self.position_topic_type=position_topic_type
         self.setpoint_topic_type=setpoint_topic_type
         self.controller_array=[]
+        self.survey_array=survey_array
 
         self.pos=uav_variables()
         rospy.Subscriber(
@@ -130,11 +131,11 @@ class uav():
 
 
     # Setpoint survey through an array
-    def survey(self, arr, threshold = 0.1):
-        if len(arr) != 0:
-            for point in arr:
+    def survey(self, threshold = 0.1):
+        if len(self.survey_array) != 0:
+            for point in self.survey_array:
                 if point[0] - self.pos.x < threshold and point[1] - self.pos.y < threshold:
-                    arr.pop[0] #TODO, NEEDS INHERITANCE FIXING
+                    self.survey_array.pop[0] #TODO, NEEDS INHERITANCE FIXING
             self.setpoint_global(point[0],point[1],self.global_pos.z)
             return 1
         else:

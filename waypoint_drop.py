@@ -12,7 +12,7 @@ from transforms3d import _gohlketransforms,euler
 import serial
 from sensor_msgs.msg import Range
 import time
-import coordinates
+import coordinates # Replace this with your own file
 import tf2_ros
 
 # 1) the egm96-5.pgm file from geographiclib.
@@ -51,14 +51,13 @@ class offboard_node():
     def __init__(self):
         print("Initalising Offboard Waypoint Drop Node")
 
-        self.uav = uav() # Initalise UAV object
+        self.uav = uav(survey_array=coordinates.waypoint_array) # Initalise UAV object
         self.uav.init_controller("close",1,0.125,1,0.125,1,0.8,0.5,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
         self.setpoint_latitude=coordinates.latitude
         self.setpoint_longitude=coordinates.longitude
         # self.setpoint_altitude=coordinates.altitude
-        self.survey_array=coordinates.waypoint_array
 
         if camera_setpoint_topic != "/tf":
             rospy.Subscriber(
@@ -166,7 +165,7 @@ class offboard_node():
                     self.uav.setpoint_global(self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
                     rospy.loginfo_throttle_identical(1,"Sending GPS Setpoint[%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
                 elif self.stage=="survey":
-                    self.uav.survey(self.survey_array)
+                    self.uav.survey()
                     rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
 
             self.rosrate.sleep()
