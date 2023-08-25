@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>UAV_wrapper_py</name>
+  <name>uav_wrapper_py</name>
   <version>0.1.0</version>
-  <description>UAV wrapper py package</description>
+  <description>uav wrapper py package</description>
 
   <maintainer email="you@yourdomain.tld">KW</maintainer>
   <license>BSD</license>
-  <url type="website">https://github.com/Kian-Wee/UAV_wrapper_py</url>
+  <url type="website">https://github.com/Kian-Wee/uav_wrapper_py</url>
   <author email="you@yourdomain.tld">KW</author>
 
   <buildtool_depend>catkin</buildtool_depend>
