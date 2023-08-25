@@ -89,8 +89,6 @@ class offboard_node():
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
 
-        rospy.Subscriber("/mavros/global_position/global",NavSatFix,self.global_pos_callback)
-
 
         while not rospy.is_shutdown():
 
@@ -138,10 +136,18 @@ class offboard_node():
             # Camera detected droppoint, switching from GPS to local setpoint mode
             if self.detected == True :
                 rospy.logwarn_once("Detected Transform")
-                self.uav.setpoint_controller(self.camera_setpoint,"close")
-                rospy.loginfo_throttle_identical(2,"UAV moving to Camera Setpoint[%s,%s,%s] from [%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
-                # At drop point, dropping payload
-                if abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
+                
+                # Align X and Y first before changing altitude due to unstable height measurements from the laser rangefinger when moving
+                if abs(self.camera_setpoint.x - self.uav.pos.x) > threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) > threshold_jog:
+                    self.camera_setpoint.z=self.uav.pos.z # Override height with current altitude
+                    self.uav.setpoint_controller(self.camera_setpoint,"close")
+
+                # Next add in z movement to align altitude
+                elif abs(self.camera_setpoint.z-self.uav.pos.z) > threshold_jog:
+                    self.uav.setpoint_controller(self.camera_setpoint,"close")
+
+                # Finally, if it is at drop point, drop payload, assume yaw is aligned by this time
+                elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
                     rospy.loginfo_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     if deployment_times <max_deployment_times:
                         if (self.stage=="disarmed" or self.stage=="survey"):
@@ -158,6 +164,11 @@ class offboard_node():
                             deployment_times +=1
                     else:
                         rospy.loginfo_once("Deployment over")
+                        
+                # If yaw is unaligned or the x/y is not within threshold, just send the entire setpoint command
+                else:
+                    rospy.loginfo_throttle_identical(2,"Detected transform, UAV moving to Camera Setpoint[%s,%s,%s] from [%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
+                    self.uav.setpoint_controller(self.camera_setpoint,"close")
  
             # Drone not at GPS Setpoint, send global coordinates
             else:
@@ -213,13 +224,6 @@ class offboard_node():
         self.pos.rx = msg.pose.orientation.x
         self.pos.ry = msg.pose.orientation.y
         self.pos.rz = msg.pose.orientation.z
-
-
-    def global_pos_callback(self,msg):
-        pass
-        # self.uav.global_pos.x = msg.latitude
-        # self.uav.global_pos.y = msg.longitude
-        # self.uav.global_pos.z = msg.altitude
 
 
     def write_serial(self,msg):
