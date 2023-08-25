@@ -73,10 +73,10 @@ class offboard_node():
         self.reset_dur=1
         
         self.stage="disarmed"
+        self.prev_msg=""
         self.write_serial(self.stage)
 
         deployment_times = 0
-        self.prev_msg=""
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)

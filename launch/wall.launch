@@ -1,5 +1,5 @@
 <launch>
-    <node pkg="uav_wrapper_py" type="wall" name="offboard_wall_node"/>
-    <node pkg="uav_wrapper_py" type="tf_publisher" name="tf_publisher"/>
-    <include file="$(find fraxinis_obb_node)/launch/fraxinis_obb.launch"/>
+    <node pkg="uav_wrapper_py" type="wall.py" name="wall"/>
+    <node pkg="uav_wrapper_py" type="tf_publisher.py" name="tf_publisher"/>
+    <!-- <include file="$(find fraxinis_obb_node)/launch/fraxinis_obb.launch"/> -->
 </launch>
