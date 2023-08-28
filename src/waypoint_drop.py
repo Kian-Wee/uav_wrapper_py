@@ -113,7 +113,7 @@ class offboard_node():
 
             # Send out position for visualisation
             self.final_transform= tf2_ros.TransformStamped()
-            self.final_transform.header.frame_id = "map"
+            self.final_transform.header.frame_id = "base_link"
             self.final_transform.header.stamp = rospy.get_rostime()
             self.final_transform.child_frame_id = "camera_setpoint"
             self.final_transform.transform.translation.x = self.camera_setpoint.x
@@ -123,7 +123,7 @@ class offboard_node():
             self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
             self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
             self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
-            # camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
+            camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
@@ -157,8 +157,6 @@ class offboard_node():
                             self.reset_timer=rospy.get_time()
                         if (self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_throttle_identical(2,"Disarming")
-                            # self.stage="payload_reset"
-                            # self.write_serial(self.stage)
                             self.stage="disarmed"
                             self.write_serial(self.stage)
                             deployment_times +=1
