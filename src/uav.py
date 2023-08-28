@@ -19,7 +19,7 @@ class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
     def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
-                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[]):
+                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[]):
         self.position_topic=name+position_topic
         self.setpoint_topic=name+setpoint_topic
         self.tf_world_frame=name+tf_world_frame
@@ -28,6 +28,7 @@ class uav():
         self.setpoint_topic_type=setpoint_topic_type
         self.controller_array=[]
         self.survey_array=survey_array
+        self.global_survey_array=global_survey_array
 
         self.pos=uav_variables()
         rospy.Subscriber(
@@ -136,18 +137,31 @@ class uav():
         self.global_pos.z = msg.altitude -_egm96.height(msg.latitude, msg.longitude)
 
     
-    # Setpoint survey through an array
-    def survey(self, threshold = 0.0000001):
-        if len(self.survey_array) != 0:
-            self.setpoint_global(self.survey_array[0][0],self.survey_array[0][1],self.global_pos.z) # Return first position in the array
-            if abs(self.survey_array[0][0] - self.global_pos.x) < threshold and abs(self.survey_array[0][1] - self.global_pos.y) < threshold:
-                print("Survey array" + str(self.survey_array))
-                print(len(self.survey_array))
-                self.survey_array.pop(0)
+    # Global setpoint survey through an array
+    # More info on threshold here: http://wiki.gis.com/wiki/index.php/Decimal_degrees
+    def global_survey(self, threshold = 0.0000001):
+        if len(self.global_survey_array) != 0:
+            self.setpoint_global(self.global_survey_array[0][0],self.global_survey_array[0][1],self.global_pos.z) # Return first position in the array
+            if abs(self.global_survey_array[0][0] - self.global_pos.x) < threshold and abs(self.global_survey_array[0][1] - self.global_pos.y) < threshold:
+                rospy.loginfo("Currently at waypoint %s, [%s]",str(len(self.global_survey_array)),str(self.global_survey_array[0]))
+                self.global_survey_array.pop(0)
             return 1
         else:
             self.setpoint_global(self.global_pos.x,self.global_pos.y,self.global_pos.z)
             return 0 # Ended
+        
+    # Local setpoint survey through an array
+    def survey(self, threshold = 0.1):
+        if len(self.survey_array) != 0:
+            self.setpoint(self.survey_array[0][0],self.survey_array[0][1],self.pos.z) # Return first position in the array
+            if abs(self.survey_array[0][0] - self.pos.x) < threshold and abs(self.survey_array[0][1] - self.pos.y) < threshold:
+                rospy.loginfo("Currently at waypoint %s, [%s]",str(len(self.survey_array)),str(self.survey_array[0]))
+                self.survey_array.pop(0)
+            return 1
+        else:
+            self.setpoint(self.pos.x,self.pos.y,self.pos.z)
+            return 0 # Ended
+
 
 
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
