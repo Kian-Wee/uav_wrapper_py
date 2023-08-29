@@ -31,7 +31,7 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
-payload_drop_height=0.6
+payload_drop_height=0.5
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="/tf"
@@ -40,7 +40,7 @@ base_frame_id="/base_link"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
 threshold_jog=0.1 #m
-threshold_jog_deg=10 #deg
+threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
@@ -95,13 +95,14 @@ class offboard_node():
 
             # Constantly poll to see if transform is found to object and align to it thereafter
             try:
-                (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
 
+                (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
                 rospy.loginfo_once("Detected Transform from camera")
 
-                self.camera_setpoint.x = trans[0]+self.uav.pos.x
-                self.camera_setpoint.y = trans[1]+self.uav.pos.y
-                self.camera_setpoint.z = trans[2]+self.uav.pos.z + payload_drop_height
+                # Perform transformation to mavros local frame
+                self.camera_setpoint.x = self.uav.pos.x-trans[0]
+                self.camera_setpoint.y = self.uav.pos.y-trans[1]
+                self.camera_setpoint.z = self.uav.pos.z+trans[2]- payload_drop_height
                 self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
                 self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
                 self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
@@ -113,16 +114,20 @@ class offboard_node():
 
             # Send out position for visualisation
             self.final_transform= tf2_ros.TransformStamped()
-            self.final_transform.header.frame_id = "base_link"
+            self.final_transform.header.frame_id = "map"
             self.final_transform.header.stamp = rospy.get_rostime()
             self.final_transform.child_frame_id = "camera_setpoint"
             self.final_transform.transform.translation.x = self.camera_setpoint.x
             self.final_transform.transform.translation.y = self.camera_setpoint.y
             self.final_transform.transform.translation.z = self.camera_setpoint.z
-            self.final_transform.transform.rotation.x  = self.camera_setpoint.rx
-            self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
-            self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
-            self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
+            self.final_transform.transform.rotation.x  = 0
+            self.final_transform.transform.rotation.y  = 0
+            self.final_transform.transform.rotation.z  = 0
+            self.final_transform.transform.rotation.w  = 1
+            # self.final_transform.transform.rotation.x  = self.camera_setpoint.rx
+            # self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
+            # self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
+            # self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
             camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default

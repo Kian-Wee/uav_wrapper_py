@@ -224,7 +224,7 @@ class uav():
 # The different message types are stored as these class variables to make it easier and more consistent to read and access
 class uav_variables():
 
-    def __init__(self,x=0,y=0,z=0,rx=0,ry=0,rz=0,rw=0):
+    def __init__(self,x=0,y=0,z=0,rx=0,ry=0,rz=0,rw=1):
         self.x=x
         self.y=y
         self.z=z
