@@ -8,6 +8,7 @@ from std_msgs.msg import Float32
 import tf
 from math import degrees
 from transforms3d import _gohlketransforms,euler
+from mavros_msgs.msg import State
 import serial
 from sensor_msgs.msg import Range
 import time
@@ -23,7 +24,7 @@ rate = 100 # Update rate
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_dist = 0.5 # used for range sensor, +ve is forward
 contact_threshold = 0.01 # UAV is assumed to be touching the wall at this distance
-wall_threshold = 0.8 # Will only proceed with deployment if probability is equals or higher than this threshold
+wall_threshold = 0.6 # Will only proceed with deployment if probability is equals or higher than this threshold
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="tf"
@@ -37,7 +38,7 @@ threshold_jog_deg=5 #deg
 # Rear Thruster Topic
 thruster_output_topic="/thruster/pwm"
 max_deployment_times = 1
-hover_height=1.45
+hover_height=1.2
 
 ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:98:E4-if00', 115200) #ls /dev/serial/by-id/*
 
@@ -75,6 +76,7 @@ class offboard_node():
         self.reset_dur=1
 
         rospy.Subscriber('/GR_Ratio',Float32,self.wall_prob_callback)
+        rospy.Subscriber('/mavros/state',State,self.mavros_state_callback)
         
         self.stage="disarmed"
         self.prev_msg=""
@@ -136,7 +138,38 @@ class offboard_node():
                     if abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog/2:
                         self.stage = "hovering"
 
-                
+                # Hover and yaw first
+                elif self.stage=="hovering":
+
+                    # Stop and yaw on the spot until aligned
+                    if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
+                        rospy.loginfo_throttle_identical(1,"Yawing towards setpoint, [%s] degrees away",degrees(abs(setpoint_yaw-current_yaw)))
+                        self.yaw_setpoint=uav_variables()
+                        self.yaw_setpoint.x=self.uav.pos.x
+                        self.yaw_setpoint.y=self.uav.pos.y
+                        self.yaw_setpoint.z=hover_height
+                        self.yaw_setpoint.rx=self.camera_setpoint.rx
+                        self.yaw_setpoint.ry=self.camera_setpoint.ry
+                        self.yaw_setpoint.rz=self.camera_setpoint.rz
+                        self.yaw_setpoint.rw=self.camera_setpoint.rw
+                        self.uav.setpoint_controller(self.yaw_setpoint,"close") # To allow it to yaw slower
+                        self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
+                    else:
+                        rospy.logwarn_throttle_identical(1,"Finished yawing")
+                        self.stage="yaw"
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+
+                # Check if surface can be deployed on, else freezes here
+                elif self.stage=="yaw" and self.mavros_state=="OFFBOARD":
+                    # Will only proceed to next stage if wall_threshold is met
+                    if self.wall_prob >= wall_threshold:
+                        self.stage="check"
+                        rospy.logwarn_throttle_identical(1,"Found deployable surface")
+                    rospy.loginfo_throttle_identical(3,"Checking surface for deployability")
+                    self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
+                    self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+
                 # When close to setpoint, use different controllers and start the release sequence when conditions are met
                 elif abs(self.camera_setpoint.x - self.uav.pos.x) <= threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) <= threshold_jog:  #and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog
                     rospy.loginfo_throttle_identical(3,"Setpoint[%s,%s,%s] close to drone, jogging it inwards based on past position",self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z)
@@ -221,42 +254,9 @@ class offboard_node():
                 else:
                     rospy.loginfo_throttle_identical(5,"Setpoint far from drone, using controller [%s,%s,%s]",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     self.last_acceptable_setpoint = self.camera_setpoint
+                    self.uav.setpoint_controller(self.camera_setpoint,"far")
+                    self.send_tf(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz,self.camera_setpoint.rw)
 
-                    # Hover and yaw first
-                    if self.stage=="hovering":
-
-                        # Stop and yaw on the spot until aligned
-                        if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
-                            rospy.loginfo_throttle_identical(1,"Yawing towards setpoint, [%s] degrees away",degrees(abs(setpoint_yaw-current_yaw)))
-                            self.yaw_setpoint=uav_variables()
-                            self.yaw_setpoint.x=self.uav.pos.x
-                            self.yaw_setpoint.y=self.uav.pos.y
-                            self.yaw_setpoint.z=hover_height
-                            self.yaw_setpoint.rx=self.camera_setpoint.rx
-                            self.yaw_setpoint.ry=self.camera_setpoint.ry
-                            self.yaw_setpoint.rz=self.camera_setpoint.rz
-                            self.yaw_setpoint.rw=self.camera_setpoint.rw
-                            self.uav.setpoint_controller(self.yaw_setpoint,"close") # To allow it to yaw slower
-                            self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
-                        else:
-                            rospy.logwarn_throttle_identical(1,"Finished yawing")
-                            self.stage="yaw"
-                            self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
-                            self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
-
-                    # Check if surface can be deployed on, else freezes here
-                    elif self.stage=="yaw":
-                        # Will only proceed to next stage if wall_threshold is met
-                        if self.wall_prob >= wall_threshold:
-                            self.stage=="check"
-                            rospy.logwarn_throttle_identical(1,"Found deployable surface")
-                        rospy.loginfo_throttle_identical(3,"Checking surface for deployability")
-                        self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
-                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
-
-                    else:
-                        self.uav.setpoint_controller(self.camera_setpoint,"far")
-                        self.send_tf(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz,self.camera_setpoint.rw)
                 
             # Deployment over, hover at current setpoint
             else:
@@ -274,6 +274,10 @@ class offboard_node():
 
     def wall_prob_callback(self, msg):
         self.wall_prob = msg.data
+
+
+    def mavros_state_callback(self, msg):
+        self.mavros_state = msg.mode
         
 
     def send_tf(self, x, y, z, rx, ry, rz, rw):
