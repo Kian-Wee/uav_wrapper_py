@@ -19,7 +19,7 @@ class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
     def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
-                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[]):
+                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[],survey_array_z=[]):
         self.position_topic=name+position_topic
         self.setpoint_topic=name+setpoint_topic
         self.tf_world_frame=name+tf_world_frame
@@ -28,7 +28,9 @@ class uav():
         self.setpoint_topic_type=setpoint_topic_type
         self.controller_array=[]
         self.survey_array=survey_array
+        self.survey_array_z=survey_array_z 
         self.global_survey_array=global_survey_array
+        self.continous_survey_pos=0
 
         self.pos=uav_variables()
         rospy.Subscriber(
@@ -162,6 +164,16 @@ class uav():
             self.setpoint(self.pos.x,self.pos.y,self.pos.z)
             return 0 # Ended
 
+
+    # Contionus Local setpoint survey through an array
+    def continous_survey(self, threshold = 0.1):
+        self.setpoint(self.survey_array_z[self.continous_survey_pos][0],self.survey_array_z[self.continous_survey_pos][1],self.survey_array_z[self.continous_survey_pos][2]) # Return first position in the array
+        if abs(self.survey_array_z[self.continous_survey_pos][0] - self.pos.x) < threshold and abs(self.ssurvey_array_z[self.continous_survey_pos][1] - self.pos.y) < threshold and abs(self.survey_array_z[self.continous_survey_pos][2] - self.pos.y) < threshold:
+            rospy.loginfo("Currently at waypoint %s, [%s]",str(self.continous_survey_pos),str(self.survey_array[self.continous_survey_pos]))
+            if self.continous_survey_pos == len(self.survey_array_z):
+                self.continous_survey_pos = 1
+            else:
+                self.continous_survey_pos += 1
 
 
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
