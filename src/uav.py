@@ -175,7 +175,7 @@ class uav():
                 self.continous_survey_pos = 0
             else:
                 rospy.loginfo("Currently at waypoint %s, moving to next waypoint",str(self.continous_survey_pos))
-                self.continous_survey_pos = self.continous_survey_pos + 1
+                self.continous_survey_pos = self.continous_survey_pos + 1 # += doesnt seem to work properly
 
 
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
