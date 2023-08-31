@@ -12,14 +12,14 @@ class offboard_node():
     def __init__(self):
         print("Initalising Simple Survey Node")
 
-        self.uav = uav(survey_array_z=[[0.9,-1.9,1],[4.79,-1.8,1]]) # Initalise UAV object
+        self.uav = uav(survey_array_z=[[0.9,-1.9,1],[4.79,-1.9,1]]) # Initalise UAV object
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
     
         while not rospy.is_shutdown():
 
-            self.uav.continous_survey()
+            self.uav.continous_survey(threshold=0.25)
             self.rosrate.sleep()
 
     
