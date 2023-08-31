@@ -168,7 +168,7 @@ class uav():
     # Contionus Local setpoint survey through an array
     def continous_survey(self, threshold = 0.1):
         self.setpoint(self.survey_array_z[self.continous_survey_pos][0],self.survey_array_z[self.continous_survey_pos][1],self.survey_array_z[self.continous_survey_pos][2]) # Return first position in the array
-        if abs(self.survey_array_z[self.continous_survey_pos][0] - self.pos.x) < threshold and abs(self.ssurvey_array_z[self.continous_survey_pos][1] - self.pos.y) < threshold and abs(self.survey_array_z[self.continous_survey_pos][2] - self.pos.y) < threshold:
+        if abs(self.survey_array_z[self.continous_survey_pos][0] - self.pos.x) < threshold and abs(self.survey_array_z[self.continous_survey_pos][1] - self.pos.y) < threshold and abs(self.survey_array_z[self.continous_survey_pos][2] - self.pos.y) < threshold:
             rospy.loginfo("Currently at waypoint %s, [%s]",str(self.continous_survey_pos),str(self.survey_array[self.continous_survey_pos]))
             if self.continous_survey_pos == len(self.survey_array_z):
                 self.continous_survey_pos = 1
