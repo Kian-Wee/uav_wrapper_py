@@ -52,12 +52,17 @@ class offboard_node():
         self.uav.init_controller("close",0.5,0.125,0.5,0.125,0.5,0.8,0.15,0.0625)
         # aux_kp=0.2
         # self.uav.init_controller("aux",aux_kp,0)
-        self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
+
 
         print("Using TF Transforms for setpoints")
 
-        self.tfBuffer = tf2_ros.Buffer()
-        self.listener = tf2_ros.TransformListener(self.tfBuffer)
+        self.tfBuffer_target = tf2_ros.Buffer()
+        self.listener_target = tf2_ros.TransformListener(self.tfBuffer_target)
+        self.camera_setpoint = uav_variables() # Custom class to store pose and orientation
+
+        self.tfBuffer_traverse = tf2_ros.Buffer()
+        self.listener_traverse = tf2_ros.TransformListener(self.tfBuffer_traverse)
+        self.traverse_setpoint = uav_variables()
 
         self.final_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
 
@@ -93,18 +98,19 @@ class offboard_node():
             try:
                 # TODO Sending a tf transform and looking it up doesn't work in the same node for some reason
                 # Look at the final transform to body_setpoint for final setpoint
-                transform_stamped = self.tfBuffer.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
-                self.camera_setpoint.x = transform_stamped.transform.translation.x
-                self.camera_setpoint.y = transform_stamped.transform.translation.y
-                self.camera_setpoint.z = hover_height
-                self.camera_setpoint.rx = transform_stamped.transform.rotation.x
-                self.camera_setpoint.ry = transform_stamped.transform.rotation.y
-                self.camera_setpoint.rz = transform_stamped.transform.rotation.z
-                self.camera_setpoint.rw = transform_stamped.transform.rotation.w
-                # print(self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz,self.camera_setpoint.rw)
-
+                transform_stamped = self.tfBuffer_target.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
+                self.camera_setpoint.update(x = transform_stamped.transform.translation.x,y = transform_stamped.transform.translation.y,z = hover_height,
+                                            rx = transform_stamped.transform.rotation.x,ry = transform_stamped.transform.rotation.y,rz = transform_stamped.transform.rotation.z,rw = transform_stamped.transform.rotation.w)
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 rospy.logdebug("Missing body setpoint tf transform")
+
+            try:
+                transform_stamped2 = self.tfBuffer_traverse.lookup_transform(world_frame_id, "traverse_pt", rospy.Time(0))
+                self.traverse_setpoint.update(x = transform_stamped2.transform.translation.x,y = transform_stamped2.transform.translation.y,z = hover_height,
+                                            rx = transform_stamped2.transform.rotation.x,ry = transform_stamped2.transform.rotation.y,rz = transform_stamped2.transform.rotation.z,rw = transform_stamped2.transform.rotation.w)
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                rospy.logdebug("Missing body setpoint tf transform")
+
 
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
@@ -112,14 +118,7 @@ class offboard_node():
 
 
             # Callback the local uav pos as a setpoint when needed to tell the uav to hover on the spot at a certain height
-            self.uav_pos_setpoint=uav_variables()
-            self.uav_pos_setpoint.x=self.uav.pos.x #Stop accepting last camera setpoint and commit to hovering while using only the rear thruster
-            self.uav_pos_setpoint.y=self.uav.pos.y
-            self.uav_pos_setpoint.z=hover_height
-            self.uav_pos_setpoint.rx=self.uav.pos.rx
-            self.uav_pos_setpoint.ry=self.uav.pos.ry
-            self.uav_pos_setpoint.rz=self.uav.pos.rz
-            self.uav_pos_setpoint.rw=self.uav.pos.rw
+            self.uav_pos_setpoint=uav_variables(x=self.uav.pos.x,y=self.uav.pos.y,z=hover_height,rx=self.uav.pos.rx,ry=self.uav.pos.ry,rz=self.uav.pos.rz,rw=self.uav.pos.rw)
 
 
             # No setpoint sent yet
@@ -144,14 +143,7 @@ class offboard_node():
                     # Stop and yaw on the spot until aligned
                     if degrees(abs(setpoint_yaw-current_yaw)) > threshold_jog_deg:
                         rospy.loginfo_throttle_identical(1,"Yawing towards setpoint, [%s] degrees away",degrees(abs(setpoint_yaw-current_yaw)))
-                        self.yaw_setpoint=uav_variables()
-                        self.yaw_setpoint.x=self.uav.pos.x
-                        self.yaw_setpoint.y=self.uav.pos.y
-                        self.yaw_setpoint.z=hover_height
-                        self.yaw_setpoint.rx=self.camera_setpoint.rx
-                        self.yaw_setpoint.ry=self.camera_setpoint.ry
-                        self.yaw_setpoint.rz=self.camera_setpoint.rz
-                        self.yaw_setpoint.rw=self.camera_setpoint.rw
+                        self.yaw_setpoint=uav_variables(x=self.uav.pos.x,y=self.uav.pos.y,z=hover_height,rx=self.camera_setpoint.rx,ry=self.camera_setpoint.ry,rz=self.camera_setpoint.rz,rw=self.camera_setpoint.rw)
                         self.uav.setpoint_controller(self.yaw_setpoint,"close") # To allow it to yaw slower
                         self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
                     else:
@@ -162,13 +154,18 @@ class offboard_node():
 
                 # Check if surface can be deployed on, else freezes here
                 elif self.stage=="yaw" and self.mavros_state=="OFFBOARD":
+                    rospy.loginfo_throttle_identical(3,"Checking surface for deployability")
                     # Will only proceed to next stage if wall_threshold is met
                     if self.wall_prob >= wall_threshold:
                         self.stage="check"
                         rospy.logwarn_throttle_identical(1,"Found deployable surface")
-                    rospy.loginfo_throttle_identical(3,"Checking surface for deployability")
-                    self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
-                    self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+                        self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
+                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+                    else:
+                        self.uav.setpoint_controller(self.traverse_setpoint,"far")
+                        self.send_tf(self.traverse_setpoint.x,self.traverse_setpoint.y,self.traverse_setpoint.z,self.traverse_setpoint.rx,self.traverse_setpoint.ry,self.traverse_setpoint.rz,self.traverse_setpoint.rw)
+                        rospy.logwarn_throttle_identical(2,"Traversing left to deployable surface")
+                        
 
                 # When close to setpoint, use different controllers and start the release sequence when conditions are met
                 elif abs(self.camera_setpoint.x - self.uav.pos.x) <= threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) <= threshold_jog:  #and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog

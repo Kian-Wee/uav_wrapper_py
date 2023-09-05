@@ -28,7 +28,7 @@ class uav():
         self.setpoint_topic_type=setpoint_topic_type
         self.controller_array=[]
         self.survey_array=survey_array
-        self.survey_array_z=survey_array_z 
+        self.survey_array_z=survey_array_z
         self.global_survey_array=global_survey_array
         self.continous_survey_pos=0
 
@@ -246,3 +246,23 @@ class uav_variables():
         self.ry=ry
         self.rz=rz
         self.rw=rw
+
+    # Save a tf2 lookup into local variable
+    def save_tf2(self,transform_stamped):
+        self.x=transform_stamped.transform.translation.x
+        self.y=transform_stamped.transform.translation.y
+        self.z=transform_stamped.transform.translation.z
+        self.rx=transform_stamped.transform.rotation.x
+        self.ry=transform_stamped.transform.rotation.y
+        self.rz=transform_stamped.transform.rotation.z
+        self.rw=transform_stamped.transform.rotation.w
+
+    def update(self,x,y,z,rx,ry,rz,rw):
+        self.x=x
+        self.y=y
+        self.z=z
+        self.rx=rx
+        self.ry=ry
+        self.rz=rz
+        self.rw=rw
+

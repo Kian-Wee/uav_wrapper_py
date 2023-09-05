@@ -1,5 +1,6 @@
 <launch>
     <node pkg="uav_wrapper_py" type="wall.py" name="wall"/>
     <node pkg="uav_wrapper_py" type="tf_publisher.py" name="tf_publisher"/>
+    <node pkg="tf" type="static_transform_publisher" name="d435_link1_broadcaster" args="0 0.2 0 0 0 0 /base_link /traverse_pt 100" />
     <!-- <include file="$(find fraxinis_obb_node)/launch/fraxinis_obb.launch"/> -->
 </launch>

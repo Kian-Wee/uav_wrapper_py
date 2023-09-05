@@ -33,10 +33,11 @@ rate = 60 # Update rate
 cameratobody_x = 0 # +ve is forward
 payload_drop_height=0.5
 
-# Camera Topic for desired setpoint
-camera_setpoint_topic="/tf"
-camera_frame_id="/pole"
-base_frame_id="/base_link"
+# Camera tf frames for desired setpoint
+camera_frame_id="pole"
+base_frame_id="base_link"
+world_frame_id="world"
+target_frame_id="body_setpoint"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
 threshold_jog=0.1 #m
@@ -55,34 +56,29 @@ class offboard_node():
         self.uav.init_controller("close",1,0.125,1,0.125,1,0.8,0.5,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
+        self.camera_to_body = uav_variables()
+        self.prev_camera_to_body = uav_variables()
+
         self.setpoint_latitude=coordinates.latitude
         self.setpoint_longitude=coordinates.longitude
         # self.setpoint_altitude=coordinates.altitude
 
-        if camera_setpoint_topic != "/tf":
-            rospy.Subscriber(
-                camera_setpoint_topic,
-                PoseStamped,
-                self.camera_listener_callback)
-        else:
-            # rospy.Subscriber(
-            #     camera_setpoint_topic,
-            #     TFMessage,
-            #     self.camera_listener_callback)
-            print("Using TF Transforms for setpoints")
-            self.listener = tf.TransformListener()
-        
-        print("Using " + camera_setpoint_topic + " setpoint topic")
+        print("Using TF Transforms for setpoints")
+        # self.listener = tf.TransformListener()
+
+        self.tfBuffer_worldtotarget = tf2_ros.Buffer()
+        self.listener_worldtotarget = tf2_ros.TransformListener(self.tfBuffer_worldtotarget)
+        self.tfBuffer_cameratotarget = tf2_ros.Buffer()
+        self.listener_cameratotarget = tf2_ros.TransformListener(self.tfBuffer_cameratotarget)
+
 
         camera_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
-        rospy.Subscriber("/mavros/local_position/pose",PoseStamped,self.local_pos_callback)
-        self.pos=uav_variables()
+
         self.prev_msg=""
 
         self.reset_timer=time.time()
         self.reset_dur=1
         self.stage="survey"
-
         deployment_times = 0
         self.detected = False
 
@@ -94,20 +90,34 @@ class offboard_node():
 
 
             # Constantly poll to see if transform is found to object and align to it thereafter
+            # If transform from camera to body has changed, update the entire setpoint and cache it
             try:
-
-                (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
+                transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, camera_frame_id, rospy.Time(0))
+                self.camera_to_body.save_tf2(transform_camera_to_body)
+                # transform_stamped = self.tfBuffer.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
+                # (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
                 rospy.loginfo_once("Detected Transform from camera")
 
-                # Perform transformation to mavros local frame
-                self.camera_setpoint.x = self.uav.pos.x-trans[0]
-                self.camera_setpoint.y = self.uav.pos.y-trans[1]
-                self.camera_setpoint.z = self.uav.pos.z+trans[2]- payload_drop_height
-                self.camera_setpoint.rx = rot[0]*self.uav.pos.rx
-                self.camera_setpoint.ry = rot[1]*self.uav.pos.ry
-                self.camera_setpoint.rz = rot[2]*self.uav.pos.rz
-                self.camera_setpoint.rw = rot[3]*self.uav.pos.rw
-                self.detected = True
+                # Check if the previous camera to body transformation has changed
+                if self.camera_to_body != self.prev_camera_to_body:
+
+                    try:
+                        # Find global to local transformation and perform transformation to mavros local frame
+                        transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
+                        self.camera_setpoint.x = self.uav.pos.x-transform_stamped.transform.translation.x
+                        self.camera_setpoint.y = self.uav.pos.y-transform_stamped.transform.translation.y
+                        self.camera_setpoint.z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
+                        self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
+                        self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
+                        self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
+                        self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
+                        self.detected = True
+
+                        self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
+
+                    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                        rospy.logdebug("Missing body setpoint tf transform")
+
 
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 rospy.logdebug("Missing tf transform")
@@ -120,14 +130,10 @@ class offboard_node():
             self.final_transform.transform.translation.x = self.camera_setpoint.x
             self.final_transform.transform.translation.y = self.camera_setpoint.y
             self.final_transform.transform.translation.z = self.camera_setpoint.z
-            self.final_transform.transform.rotation.x  = 0
-            self.final_transform.transform.rotation.y  = 0
-            self.final_transform.transform.rotation.z  = 0
-            self.final_transform.transform.rotation.w  = 1
-            # self.final_transform.transform.rotation.x  = self.camera_setpoint.rx
-            # self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
-            # self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
-            # self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
+            self.final_transform.transform.rotation.x  = self.camera_setpoint.rx
+            self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
+            self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
+            self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
             camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
@@ -183,50 +189,6 @@ class offboard_node():
                     rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
 
             self.rosrate.sleep()
-
-
-    def camera_listener_callback(self, msg):
-        rospy.loginfo("New Camera setpoint(x:"+str(msg.pose.position.x)+", y:"+str(msg.pose.position.y)+", z:"+str(msg.pose.position.z)+")")
-        # If TF is used as the as the position
-        # if msg._type=="tf2_msgs/TFMessage":
-        #     print(msg.transforms[0].header.frame_id,msg.transforms[0].child_frame_id)
-        #     if msg.transforms[0].header.frame_id == base_frame_id and msg.transforms[0].child_frame_id == camera_frame_id:
-        #         self.camera_setpoint.x = msg.transforms[0].transform.translation.x
-        #         self.camera_setpoint.y = msg.transforms[0].transform.translation.y
-        #         self.camera_setpoint.z = msg.transforms[0].transform.translation.z
-        #         self.camera_setpoint.rx = msg.transforms[0].transform.rotation.x
-        #         self.camera_setpoint.ry = msg.transforms[0].transform.rotation.y
-        #         self.camera_setpoint.rz = msg.transforms[0].transform.rotation.z
-        #         self.camera_setpoint.rw = msg.transforms[0].transform.rotation.w
-        if msg._type=="geometry_msgs/PoseStamped":
-            if self.camera_setpoint.z + payload_drop_height > 0:
-                self.camera_setpoint.x = msg.pose.position.x
-                self.camera_setpoint.y = msg.pose.position.y
-                self.camera_setpoint.z = msg.pose.position.z + payload_drop_height
-                self.camera_setpoint.rw = msg.pose.orientation.w
-                self.camera_setpoint.rx = msg.pose.orientation.x
-                self.camera_setpoint.ry = msg.pose.orientation.y
-                self.camera_setpoint.rz = msg.pose.orientation.z
-            else:
-                rospy.logerr("Setpoint Z <<< 0")
-                self.camera_setpoint.x = self.uav.pos.x
-                self.camera_setpoint.y = self.uav.pos.y
-                self.camera_setpoint.z = self.uav.pos.z
-                self.camera_setpoint.rw = self.uav.pos.rw
-                self.camera_setpoint.rx = self.uav.pos.rx
-                self.camera_setpoint.ry = self.uav.pos.ry
-                self.camera_setpoint.rz = self.uav.pos.rz
-        else:
-            rospy.logfatal("Invalid camera setpoint message type")
-
-    def local_pos_callback(self,msg):
-        self.pos.x = msg.pose.position.x
-        self.pos.y = msg.pose.position.y
-        self.pos.z = msg.pose.position.z
-        self.pos.rw = msg.pose.orientation.w
-        self.pos.rx = msg.pose.orientation.x
-        self.pos.ry = msg.pose.orientation.y
-        self.pos.rz = msg.pose.orientation.z
 
 
     def write_serial(self,msg):
