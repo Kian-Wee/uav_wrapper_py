@@ -19,12 +19,12 @@ import tf2_ros
 # Example code for a multi-staged multi-controller wall approach, to get it close to a wall and then slowly jog in 
 
 
-rate = 100 # Update rate
+rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_dist = 0.5 # used for range sensor, +ve is forward
 contact_threshold = 0.01 # UAV is assumed to be touching the wall at this distance
-wall_threshold = 0.6 # Will only proceed with deployment if probability is equals or higher than this threshold
+wall_threshold = 0.8 # Will only proceed with deployment if probability is equals or higher than this threshold
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="tf"
@@ -38,7 +38,7 @@ threshold_jog_deg=5 #deg
 # Rear Thruster Topic
 thruster_output_topic="/thruster/pwm"
 max_deployment_times = 1
-hover_height=1.2
+hover_height=1.45
 
 ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:98:E4-if00', 115200) #ls /dev/serial/by-id/*
 
@@ -94,10 +94,9 @@ class offboard_node():
     
         while not rospy.is_shutdown():
 
-            
+            # TODO Sending a tf transform and looking it up doesn't work in the same node for some reason
+            # Look at the final transform to body_setpoint for final setpoint
             try:
-                # TODO Sending a tf transform and looking it up doesn't work in the same node for some reason
-                # Look at the final transform to body_setpoint for final setpoint
                 transform_stamped = self.tfBuffer_target.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
                 self.camera_setpoint.update(x = transform_stamped.transform.translation.x,y = transform_stamped.transform.translation.y,z = hover_height,
                                             rx = transform_stamped.transform.rotation.x,ry = transform_stamped.transform.rotation.y,rz = transform_stamped.transform.rotation.z,rw = transform_stamped.transform.rotation.w)
@@ -110,7 +109,6 @@ class offboard_node():
                                             rx = transform_stamped2.transform.rotation.x,ry = transform_stamped2.transform.rotation.y,rz = transform_stamped2.transform.rotation.z,rw = transform_stamped2.transform.rotation.w)
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 rospy.logdebug("Missing body setpoint tf transform")
-
 
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
@@ -132,11 +130,12 @@ class offboard_node():
 
                 # Wait for UAV to get to altitude first
                 if self.stage == "disarmed":
+                    rospy.loginfo_throttle_identical(5, "Moving to set altitude")
                     self.uav.setpoint_controller(self.uav_pos_setpoint,"far") # Ascent to altitude at current position
                     self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
                     if abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog/2:
                         self.stage = "hovering"
-
+                        rospy.logwarn_throttle_identical(2, "At hover height")
                 # Hover and yaw first
                 elif self.stage=="hovering":
 
@@ -275,7 +274,7 @@ class offboard_node():
 
     def mavros_state_callback(self, msg):
         self.mavros_state = msg.mode
-        
+
 
     def send_tf(self, x, y, z, rx, ry, rz, rw):
         self.final_transform= tf2_ros.TransformStamped()
