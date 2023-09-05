@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import numpy as np
 from transforms3d import _gohlketransforms,euler
 from scipy.spatial.transform import Rotation
