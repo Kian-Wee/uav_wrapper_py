@@ -64,6 +64,10 @@ class offboard_node():
         self.listener_traverse = tf2_ros.TransformListener(self.tfBuffer_traverse)
         self.traverse_setpoint = uav_variables()
 
+        self.tfBuffer_yaw = tf2_ros.Buffer()
+        self.listener_yaw = tf2_ros.TransformListener(self.tfBuffer_yaw)
+        self.yaw_setpoint = uav_variables()
+
         self.final_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
 
         self.last_acceptable_setpoint = uav_variables()
@@ -110,6 +114,14 @@ class offboard_node():
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 rospy.logdebug("Missing body setpoint tf transform")
 
+            try:
+                transform_stamped3 = self.tfBuffer_yaw.lookup_transform(world_frame_id, "yaw_pt", rospy.Time(0))
+                self.yaw_setpoint.update(x = transform_stamped3.transform.translation.x,y = transform_stamped3.transform.translation.y,z = hover_height,
+                                            rx = transform_stamped3.transform.rotation.x,ry = transform_stamped3.transform.rotation.y,rz = transform_stamped3.transform.rotation.z,rw = transform_stamped3.transform.rotation.w)
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                rospy.logdebug("Missing body setpoint tf transform")
+
+
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
@@ -119,14 +131,8 @@ class offboard_node():
             self.uav_pos_setpoint=uav_variables(x=self.uav.pos.x,y=self.uav.pos.y,z=hover_height,rx=self.uav.pos.rx,ry=self.uav.pos.ry,rz=self.uav.pos.rz,rw=self.uav.pos.rw)
 
 
-            # No setpoint sent yet
-            if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
-                rospy.loginfo_throttle_identical(2, "Missing setpoint/tf, hovering at current location")
-                self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
-                self.send_tf(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw)
             # Proceed with deployment if max number of deployment has not been reached
-            elif deployment_times <max_deployment_times:
-
+            if deployment_times <max_deployment_times:
 
                 # Wait for UAV to get to altitude first
                 if self.stage == "disarmed":
@@ -136,6 +142,13 @@ class offboard_node():
                     if abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog/2:
                         self.stage = "hovering"
                         rospy.logwarn_throttle_identical(2, "At hover height")
+
+                # If no setpoint is seen, yaw left until setpoint is seen/issued
+                elif self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
+                    rospy.loginfo_throttle_identical(2, "Missing setpoint/tf, yawing 2deg left until wall detected")
+                    self.uav.setpoint_quat(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw) #callback local position
+                    self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
+
                 # Hover and yaw first
                 elif self.stage=="hovering":
 
@@ -253,6 +266,12 @@ class offboard_node():
                     self.uav.setpoint_controller(self.camera_setpoint,"far")
                     self.send_tf(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz,self.camera_setpoint.rw)
 
+                
+            # No setpoint sent yet(should not be running)
+            elif self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
+                rospy.loginfo_throttle_identical(2, "Missing setpoint/tf, hovering at current location")
+                self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
+                self.send_tf(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw)
                 
             # Deployment over, hover at current setpoint
             else:
