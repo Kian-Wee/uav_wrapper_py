@@ -88,9 +88,14 @@ class offboard_node():
 
         while not rospy.is_shutdown():
 
-
-            # Constantly poll to see if transform is found to object and align to it thereafter
-            # If transform from camera to body has changed, update the entire setpoint and cache it
+            '''
+            Constantly poll to see if transform is found to object and align to it thereafter
+            If transform from camera to body has changed, update the entire setpoint and cache it
+            This is required due to the two different update rates of the camera to uav and the uav to global frames
+            tf2 also stores a snapshot for every transform for up to 10s (http://wiki.ros.org/tf2/Tutorials/tf2%20and%20time%20%28C%2B%2B%29)
+            which means that performing the whole transform will result in an outdated object if the uav is moving
+            Side note: last parameter for lookuptransform is an optional blocking timeout https://docs.ros.org/en/galactic/Tutorials/Intermediate/Tf2/Learning-About-Tf2-And-Time-Cpp.html
+            '''
             try:
                 transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, camera_frame_id, rospy.Time(0))
                 self.camera_to_body.save_tf2(transform_camera_to_body)
