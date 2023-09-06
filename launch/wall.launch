@@ -1,7 +1,7 @@
 <launch>
-    <node pkg="uav_wrapper_py" type="wall.py" name="wall"/>
+    <!-- <node pkg="uav_wrapper_py" type="wall.py" name="wall"/> -->
     <node pkg="uav_wrapper_py" type="tf_publisher.py" name="tf_publisher"/>
     <node pkg="tf" type="static_transform_publisher" name="traverse_link_broadcaster" args="0 0.2 0 0 0 0 /base_link /traverse_pt 100" />
     <node pkg="tf" type="static_transform_publisher" name="yaw_link_broadcaster" args="0 0 0 0.0349066 0 0 /base_link /yaw_pt 100" />
-    <!-- <include file="$(find fraxinis_obb_node)/launch/fraxinis_obb.launch"/> -->
+    <include file="$(find uav_wrapper_py)/launch/vrpn_moose.launch"/>
 </launch>
