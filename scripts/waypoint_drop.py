@@ -14,7 +14,8 @@ from sensor_msgs.msg import Range
 import time
 import coordinates # Replace this with your own file
 import tf2_ros
-import quarternion
+from scipy.spatial.transform import Rotation
+import numpy as np
 
 # 1) the egm96-5.pgm file from geographiclib.
 # To get it on Ubuntu run:
@@ -83,7 +84,7 @@ class offboard_node():
         deployment_times = 0
         self.detected = False
 
-        self.default_height = 3.2
+        self.median_height = 3.2 # default height
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
@@ -113,16 +114,25 @@ class offboard_node():
                         transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
                         self.camera_setpoint.x = self.uav.pos.x-transform_stamped.transform.translation.x
                         self.camera_setpoint.y = self.uav.pos.y-transform_stamped.transform.translation.y
-                        self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
-                        self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
-                        self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
-                        self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
+                        q1=[transform_stamped.transform.rotation.x.transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
+                        q2=[self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw]
+                        q3 = Rotation.from_quat(q1).mul(Rotation.from_quat(q2)).as_quat()
+                        self.camera_setpoint.rx = q3[0]
+                        self.camera_setpoint.ry = q3[1]
+                        self.camera_setpoint.rz = q3[2]
+                        self.camera_setpoint.rw = q3[3]
+                        # self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
+                        # self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
+                        # self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
+                        # self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
                         self.detected = True
 
                         if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
                             self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
                         else:
-                            self.camera_setpoint.z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
+                            z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
+                            self.median_height += 0.2 * np.sgn(z - self.median_height)
+                            self.camera_setpoint.z = self.median_height
 
                         print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
 
@@ -147,7 +157,7 @@ class offboard_node():
             self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
             self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
             self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
-            # camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
+            camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
