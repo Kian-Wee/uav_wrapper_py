@@ -131,7 +131,7 @@ class offboard_node():
                             self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
                         else:
                             z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
-                            self.median_height += 0.2 * np.sgn(z - self.median_height)
+                            self.median_height += 0.2 * np.sign(z - self.median_height)
                             self.camera_setpoint.z = self.median_height
 
                         print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
