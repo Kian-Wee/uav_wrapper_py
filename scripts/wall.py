@@ -37,6 +37,7 @@ threshold_jog=0.5 #m
 threshold_jog_deg=5 #deg  
 # Rear Thruster Topic
 thruster_output_topic="/thruster/pwm"
+max_thrust=70
 max_deployment_times = 1
 hover_height=1.45
 
@@ -77,6 +78,10 @@ class offboard_node():
         self.wall_dist=999
         self.wall_timer=999999999999999999999999999999
         self.wall_dur=8 #s
+        self.yaw_halt_timer=999999999999999999999999999999
+        self.yaw_halt_dur=1.5
+        self.check_halt_timer=999999999999999999999999999999
+        self.check_halt_dur=2
         self.servo_timer=999999999999999999999999999999
         self.servo_dur=2 #s
         self.adh_timer=999999999999999999999999999999
@@ -139,7 +144,7 @@ class offboard_node():
                     rospy.loginfo_throttle_identical(5, "Moving to set altitude")
                     self.uav.setpoint_controller(self.uav_pos_setpoint,"far") # Ascent to altitude at current position
                     self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
-                    if abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog/2:
+                    if abs(hover_height-self.uav.pos.z) < threshold_jog/2:
                         self.stage = "hovering"
                         rospy.logwarn_throttle_identical(2, "At hover height")
 
@@ -160,24 +165,41 @@ class offboard_node():
                         self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
                     else:
                         rospy.logwarn_throttle_identical(1,"Finished yawing")
+                        self.stage="yaw-halt"
+                        self.uav.setpoint_controller(self.yaw_setpoint,"close") # To allow it to yaw slower
+                        self.send_tf(self.yaw_setpoint.x,self.yaw_setpoint.y,self.yaw_setpoint.z,self.yaw_setpoint.rx,self.yaw_setpoint.ry,self.yaw_setpoint.rz,self.yaw_setpoint.rw)
+                        self.yaw_halt_timer=time.time()
+                
+                elif self.stage=="yaw-halt":
+                    rospy.loginfo_throttle_identical(1,"Halting after yaw")
+                    if time.time() >= self.yaw_halt_dur + self.yaw_halt_timer:
                         self.stage="yaw"
-                        self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
-                        self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+                        rospy.logwarn_throttle_identical(1,"Finish halting at deployable surface")
+                    self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
+                    self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                 # Check if surface can be deployed on, else freezes here
                 elif self.stage=="yaw" and self.mavros_state=="OFFBOARD":
                     rospy.loginfo_throttle_identical(3,"Checking surface for deployability")
                     # Will only proceed to next stage if wall_threshold is met
                     if self.wall_prob >= wall_threshold:
-                        self.stage="check"
+                        self.stage="check-halt"
                         rospy.logwarn_throttle_identical(1,"Found deployable surface")
                         self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
+                        self.check_halt_timer=time.time()
                     else:
                         self.uav.setpoint_controller(self.traverse_setpoint,"far")
                         self.send_tf(self.traverse_setpoint.x,self.traverse_setpoint.y,self.traverse_setpoint.z,self.traverse_setpoint.rx,self.traverse_setpoint.ry,self.traverse_setpoint.rz,self.traverse_setpoint.rw)
                         rospy.logwarn_throttle_identical(2,"Traversing left to deployable surface")
-                        
+
+                elif self.stage=="check-halt":
+                    rospy.loginfo_throttle_identical(2,"Halting at deployable surface")
+                    if time.time() >= self.check_halt_dur + self.check_halt_timer:
+                        self.stage="check"
+                        rospy.logwarn_throttle_identical(1,"Finish halting at deployable surface")
+                    self.uav.setpoint_controller(self.uav_pos_setpoint,"far")
+                    self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
                 # When close to setpoint, use different controllers and start the release sequence when conditions are met
                 elif abs(self.camera_setpoint.x - self.uav.pos.x) <= threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) <= threshold_jog:  #and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog
@@ -188,45 +210,45 @@ class offboard_node():
                         rospy.logwarn_throttle_identical(1,"Approached wall, stabilising")
                         self.stage= "contact"
                         self.write_serial(self.stage)
-                        norm_thrust = 100
+                        norm_thrust = max_thrust
                         
                         self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
-                        self.wall_timer=rospy.get_time()
+                        self.wall_timer=time.time()
 
                     elif (self.wall_dist <= contact_threshold and self.stage=="contact" and time.time()>=self.wall_timer+self.wall_dur):
                         rospy.logwarn_throttle_identical(1,"Touched wall and stabilised, releasing adhesive")
                         self.stage= "glue_release"
                         self.write_serial(self.stage)
-                        norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
+                        norm_thrust = max_thrust
 
                         self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
-                        self.servo_timer=rospy.get_time()
+                        self.servo_timer=time.time()
 
                     elif (self.wall_dist <= contact_threshold and self.stage=="glue_release" and time.time()>=self.servo_timer+self.servo_dur):
                         rospy.logwarn_throttle_identical(0.5,"Adhesive Released, turning on LED")
                         self.stage= "uv_on"
                         self.write_serial(self.stage)
-                        norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
+                        norm_thrust = max_thrust
 
                         self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
-                        self.adh_timer=rospy.get_time()
+                        self.adh_timer=time.time()
                         
                     elif (self.wall_dist <= contact_threshold and self.stage=="uv_on" and time.time()>=self.adh_timer+self.adh_dur):
                         rospy.logwarn_throttle_identical(1,"Dropping payload")
                         self.stage="payload_drop"
                         self.write_serial(self.stage)
-                        norm_thrust = 100 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 100% thrust
+                        norm_thrust = max_thrust
 
                         self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
-                        self.reset_timer=rospy.get_time()
+                        self.reset_timer=time.time()
 
                     elif (self.wall_dist <= contact_threshold and self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                         rospy.logwarn_throttle_identical(0.5,"Disarming")
@@ -252,7 +274,7 @@ class offboard_node():
                             self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
                         # If contacted wall, set thruster to full and hover at current position to avoid PX4 MPC overcompensating
                         else:
-                            norm_thrust = 100
+                            norm_thrust = max_thrust
                             self.uav.setpoint_controller(self.uav_pos_setpoint,"close")
                             self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
 
