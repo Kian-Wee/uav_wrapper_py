@@ -79,9 +79,9 @@ class offboard_node():
         self.wall_timer=999999999999999999999999999999
         self.wall_dur=8 #s
         self.yaw_halt_timer=999999999999999999999999999999
-        self.yaw_halt_dur=1.5
+        self.yaw_halt_dur=1
         self.check_halt_timer=999999999999999999999999999999
-        self.check_halt_dur=2
+        self.check_halt_dur=1.5
         self.servo_timer=999999999999999999999999999999
         self.servo_dur=2 #s
         self.adh_timer=999999999999999999999999999999
@@ -189,6 +189,11 @@ class offboard_node():
                         self.send_tf(self.uav_pos_setpoint.x,self.uav_pos_setpoint.y,self.uav_pos_setpoint.z,self.uav_pos_setpoint.rx,self.uav_pos_setpoint.ry,self.uav_pos_setpoint.rz,self.uav_pos_setpoint.rw)
                         self.check_halt_timer=time.time()
                     else:
+                        self.traverse_setpoint.y=-0.25
+                        self.traverse_setpoint.rx=self.camera_setpoint.rx
+                        self.traverse_setpoint.ry=self.camera_setpoint.ry
+                        self.traverse_setpoint.rz=self.camera_setpoint.rz
+                        self.traverse_setpoint.rw=self.camera_setpoint.rw
                         self.uav.setpoint_controller(self.traverse_setpoint,"far")
                         self.send_tf(self.traverse_setpoint.x,self.traverse_setpoint.y,self.traverse_setpoint.z,self.traverse_setpoint.rx,self.traverse_setpoint.ry,self.traverse_setpoint.rz,self.traverse_setpoint.rw)
                         rospy.logwarn_throttle_identical(2,"Traversing left to deployable surface")
