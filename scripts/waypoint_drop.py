@@ -14,6 +14,7 @@ from sensor_msgs.msg import Range
 import time
 import coordinates # Replace this with your own file
 import tf2_ros
+import quarternion
 
 # 1) the egm96-5.pgm file from geographiclib.
 # To get it on Ubuntu run:
@@ -36,7 +37,7 @@ payload_drop_height=0.5
 # Camera tf frames for desired setpoint
 camera_frame_id="pole"
 base_frame_id="base_link"
-world_frame_id="world"
+world_frame_id="map"
 target_frame_id="body_setpoint"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
@@ -82,6 +83,8 @@ class offboard_node():
         deployment_times = 0
         self.detected = False
 
+        self.default_height = 3.2
+
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
 
@@ -97,26 +100,31 @@ class offboard_node():
             Side note: last parameter for lookuptransform is an optional blocking timeout https://docs.ros.org/en/galactic/Tutorials/Intermediate/Tf2/Learning-About-Tf2-And-Time-Cpp.html
             '''
             try:
-                transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, camera_frame_id, rospy.Time(0))
+                transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, target_frame_id, rospy.Time(0))
                 self.camera_to_body.save_tf2(transform_camera_to_body)
                 # transform_stamped = self.tfBuffer.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
                 # (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
                 rospy.loginfo_once("Detected Transform from camera")
-
                 # Check if the previous camera to body transformation has changed
-                if self.camera_to_body != self.prev_camera_to_body:
+                if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw:
 
                     try:
                         # Find global to local transformation and perform transformation to mavros local frame
                         transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
                         self.camera_setpoint.x = self.uav.pos.x-transform_stamped.transform.translation.x
                         self.camera_setpoint.y = self.uav.pos.y-transform_stamped.transform.translation.y
-                        self.camera_setpoint.z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
                         self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
                         self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
                         self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
                         self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
                         self.detected = True
+
+                        if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
+                            self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
+                        else:
+                            self.camera_setpoint.z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
+
+                        print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
 
                         self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
 
@@ -139,7 +147,7 @@ class offboard_node():
             self.final_transform.transform.rotation.y  = self.camera_setpoint.ry
             self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
             self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
-            camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
+            # camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
@@ -188,10 +196,10 @@ class offboard_node():
             else:
                 if self.stage=="disarmed":
                     self.uav.setpoint_global(self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
-                    rospy.loginfo_throttle_identical(1,"Sending GPS Setpoint[%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
+                    rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
                 elif self.stage=="survey":
                     self.uav.survey()
-                    rospy.loginfo_throttle_identical(1,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
+                    rospy.loginfo_throttle_identical(5,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
 
             self.rosrate.sleep()
 
