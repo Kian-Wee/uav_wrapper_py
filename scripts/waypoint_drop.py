@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 from uav import uav, uav_variables
@@ -112,11 +112,12 @@ class offboard_node():
                     try:
                         # Find global to local transformation and perform transformation to mavros local frame
                         transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
-                        self.camera_setpoint.x = self.uav.pos.x-transform_stamped.transform.translation.x
-                        self.camera_setpoint.y = self.uav.pos.y-transform_stamped.transform.translation.y
-                        q1=[transform_stamped.transform.rotation.x.transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
+                        # print(transform_stamped.transform.translation.x,transform_stamped.transform.translation.y,transform_stamped.transform.translation.z)
+                        self.camera_setpoint.x = transform_stamped.transform.translation.x
+                        self.camera_setpoint.y = transform_stamped.transform.translation.y
+                        q1=[transform_stamped.transform.rotation.x,transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
                         q2=[self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw]
-                        q3 = Rotation.from_quat(q1).mul(Rotation.from_quat(q2)).as_quat()
+                        q3 = Rotation.from_quat(q1).__mul__(Rotation.from_quat(q2)).as_quat()
                         self.camera_setpoint.rx = q3[0]
                         self.camera_setpoint.ry = q3[1]
                         self.camera_setpoint.rz = q3[2]
