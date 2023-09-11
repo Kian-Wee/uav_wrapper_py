@@ -33,7 +33,7 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
-payload_drop_height=0.5
+payload_drop_height=0.5 # 0.5 
 
 # Camera tf frames for desired setpoint
 camera_frame_id="pole"
@@ -42,7 +42,7 @@ world_frame_id="map"
 target_frame_id="body_setpoint"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
-threshold_jog=0.1 #m
+threshold_jog=0.2 #m
 threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
@@ -55,7 +55,7 @@ class offboard_node():
         print("Initalising Offboard Waypoint Drop Node")
 
         self.uav = uav(survey_array=coordinates.waypoint_array) # Initalise UAV object
-        self.uav.init_controller("close",1,0.125,1,0.125,1,0.8,0.5,0.0625) # Initalise additional controllers
+        self.uav.init_controller("close",0.5,0.1,0.5,0.1,0.8,0.8,0.2,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
         self.camera_to_body = uav_variables()
@@ -115,17 +115,21 @@ class offboard_node():
                         # print(transform_stamped.transform.translation.x,transform_stamped.transform.translation.y,transform_stamped.transform.translation.z)
                         self.camera_setpoint.x = transform_stamped.transform.translation.x
                         self.camera_setpoint.y = transform_stamped.transform.translation.y
-                        q1=[transform_stamped.transform.rotation.x,transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
-                        q2=[self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw]
-                        q3 = Rotation.from_quat(q1).__mul__(Rotation.from_quat(q2)).as_quat()
-                        self.camera_setpoint.rx = q3[0]
-                        self.camera_setpoint.ry = q3[1]
-                        self.camera_setpoint.rz = q3[2]
-                        self.camera_setpoint.rw = q3[3]
+                        # q1=[transform_stamped.transform.rotation.x,transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
+                        # q2=[self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw]
+                        # q3 = Rotation.from_quat(q1).__mul__(Rotation.from_quat(q2)).as_quat()
+                        # self.camera_setpoint.rx = q3[0]
+                        # self.camera_setpoint.ry = q3[1]
+                        # self.camera_setpoint.rz = q3[2]
+                        # self.camera_setpoint.rw = q3[3]
                         # self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
                         # self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
                         # self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
                         # self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
+                        self.camera_setpoint.rx = transform_stamped.transform.rotation.x
+                        self.camera_setpoint.ry = transform_stamped.transform.rotation.y
+                        self.camera_setpoint.rz = transform_stamped.transform.rotation.z
+                        self.camera_setpoint.rw = transform_stamped.transform.rotation.w
                         self.detected = True
 
                         if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
@@ -135,7 +139,7 @@ class offboard_node():
                             self.median_height += 0.2 * np.sign(z - self.median_height)
                             self.camera_setpoint.z = self.median_height
 
-                        print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
+                        # print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
 
                         self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
 
@@ -176,14 +180,16 @@ class offboard_node():
                 if abs(self.camera_setpoint.x - self.uav.pos.x) > threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) > threshold_jog:
                     self.camera_setpoint.z=self.uav.pos.z # Override height with current altitude
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
+                    rospy.logwarn_throttle_identical(2,"Aligning XY to Camera Setpoint[%s,%s,%s] <--- UAV[%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
 
                 # Next add in z movement to align altitude
                 elif abs(self.camera_setpoint.z-self.uav.pos.z) > threshold_jog:
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
+                    rospy.logwarn_throttle_identical(2,"Aligning Z to Camera Setpoint[%s,%s,%s] <--- UAV[%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
 
                 # Finally, if it is at drop point, drop payload, assume yaw is aligned by this time
-                elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) << threshold_jog_deg:
-                    rospy.loginfo_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
+                elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) < threshold_jog_deg:
+                    rospy.logwarn_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     if deployment_times <max_deployment_times:
                         if (self.stage=="disarmed" or self.stage=="survey"):
                             rospy.loginfo_throttle_identical(2,"Releasing Payload")
@@ -196,7 +202,7 @@ class offboard_node():
                             self.write_serial(self.stage)
                             deployment_times +=1
                     else:
-                        rospy.loginfo_once("Deployment over")
+                        rospy.logwarn_once("Deployment over")
                         
                 # If yaw is unaligned or the x/y is not within threshold, just send the entire setpoint command
                 else:
