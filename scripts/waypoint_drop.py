@@ -200,7 +200,9 @@ class offboard_node():
                             self.write_serial(self.stage)
                             deployment_times +=1
                     else:
-                        rospy.logwarn_once("Deployment over")
+                        rospy.logwarn_once()
+                        rospy.logwarn_throttle_identical(10,"Deployment over")
+                        self.uav.setpoint_controller(self.camera_setpoint,"close")
                         
                 # If yaw is unaligned or the x/y is not within threshold, just send the entire setpoint command
                 else:
