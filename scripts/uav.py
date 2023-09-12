@@ -224,6 +224,10 @@ class uav():
             rospy.logfatal_throttle_identical(1,"Invalid continous survey array type")
 
 
+    def continous_survey_update(self, array):
+        self.survey_array_z = array
+
+
     # Send setpoint directly to px4's MPC controller in euler:yaw(in degrees)
     def setpoint_yaw(self,x,y,z,yaw):
         if self.setpoint_topic_type == PoseStamped:
