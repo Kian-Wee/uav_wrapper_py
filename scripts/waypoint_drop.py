@@ -2,7 +2,6 @@
 
 import rospy
 from uav import uav, uav_variables
-from geometry_msgs.msg import PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix
 from tf2_msgs.msg import TFMessage
@@ -10,7 +9,6 @@ import tf
 from math import degrees
 from transforms3d import _gohlketransforms,euler
 import serial
-from sensor_msgs.msg import Range
 import time
 import coordinates # Replace this with your own file
 import tf2_ros
@@ -135,7 +133,7 @@ class offboard_node():
                         if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
                             self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
                         else:
-                            z = self.uav.pos.z+transform_stamped.transform.translation.z- payload_drop_height
+                            z = transform_stamped.transform.translation.z- payload_drop_height
                             self.median_height += 0.2 * np.sign(z - self.median_height)
                             self.camera_setpoint.z = self.median_height
 
