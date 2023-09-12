@@ -200,7 +200,6 @@ class offboard_node():
                             self.write_serial(self.stage)
                             deployment_times +=1
                     else:
-                        rospy.logwarn_once()
                         rospy.logwarn_throttle_identical(10,"Deployment over")
                         self.uav.setpoint_controller(self.camera_setpoint,"close")
                         
