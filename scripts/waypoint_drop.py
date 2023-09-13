@@ -112,8 +112,11 @@ class offboard_node():
                         self.camera_setpoint.rz = transform_stamped.transform.rotation.z
                         self.camera_setpoint.rw = transform_stamped.transform.rotation.w
 
+                        # self.camera_setpoint.z = transform_stamped.transform.translation.z
                         self.camera_setpoint.z = transform_stamped.transform.translation.z
-                        # # Filter z setpoints
+                        # self.median_height += 0.2 * np.sign(z - self.median_height)
+                        # self.camera_setpoint.z = self.median_height
+                        # Filter z setpoints
                         # if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
                         #     self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
                         # else:
