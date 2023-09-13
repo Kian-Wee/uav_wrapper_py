@@ -2,6 +2,8 @@
 
 import rospy
 from uav import uav, uav_variables
+from geographic_msgs.msg import GeoPoseStamped
+from sensor_msgs.msg import NavSatFix
 from tf2_msgs.msg import TFMessage
 import tf
 from math import degrees
@@ -13,6 +15,18 @@ import tf2_ros
 from scipy.spatial.transform import Rotation
 import numpy as np
 from mavros_msgs.msg import State
+
+# 1) the egm96-5.pgm file from geographiclib.
+# To get it on Ubuntu run:
+# sudo apt install geographiclib-tools
+# sudo geographiclib-get-geoids egm96-5
+#
+# 2) PyGeodesy
+# To get it using pip:
+# pip install PyGeodesy
+from pygeodesy.geoids import GeoidPGM
+
+_egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 
 rate = 60 # Update rate
 
@@ -31,9 +45,6 @@ threshold_jog=0.2 #m
 threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
-# Setpoint array
-sp_arr = [0,0],[5,0]
-
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
 
@@ -42,7 +53,7 @@ class offboard_node():
     def __init__(self):
         print("Initalising Offboard Waypoint Drop Node")
 
-        self.uav = uav(survey_array=sp_arr) # Initalise UAV object
+        self.uav = uav(survey_array=[[0,0],[5,0]]) # Initalise UAV object
         self.uav.init_controller("close",0.7,0.1,0.7,0.1,0.8,0.8,0.1,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
@@ -60,6 +71,7 @@ class offboard_node():
         self.listener_worldtotarget = tf2_ros.TransformListener(self.tfBuffer_worldtotarget)
         self.tfBuffer_cameratotarget = tf2_ros.Buffer()
         self.listener_cameratotarget = tf2_ros.TransformListener(self.tfBuffer_cameratotarget)
+
 
         camera_setpoint_broadcaster = tf2_ros.TransformBroadcaster()
 
@@ -93,6 +105,8 @@ class offboard_node():
             try:
                 transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, target_frame_id, rospy.Time(0))
                 self.camera_to_body.save_tf2(transform_camera_to_body)
+                # transform_stamped = self.tfBuffer.lookup_transform(world_frame_id, "body_setpoint", rospy.Time(0))
+                # (trans,rot)=self.listener.lookupTransform(camera_frame_id, base_frame_id, rospy.Time(0))
                 rospy.loginfo_once("Detected Transform from camera")
                 # Check if the previous camera to body transformation has changed
                 if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw:
@@ -100,15 +114,26 @@ class offboard_node():
                     try:
                         # Find global to local transformation and perform transformation to mavros local frame
                         transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
+                        # print(transform_stamped.transform.translation.x,transform_stamped.transform.translation.y,transform_stamped.transform.translation.z)
                         self.camera_setpoint.x = transform_stamped.transform.translation.x
                         self.camera_setpoint.y = transform_stamped.transform.translation.y
+                        # q1=[transform_stamped.transform.rotation.x,transform_stamped.transform.rotation.y,transform_stamped.transform.rotation.z,transform_stamped.transform.rotation.w]
+                        # q2=[self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw]
+                        # q3 = Rotation.from_quat(q1).__mul__(Rotation.from_quat(q2)).as_quat()
+                        # self.camera_setpoint.rx = q3[0]
+                        # self.camera_setpoint.ry = q3[1]
+                        # self.camera_setpoint.rz = q3[2]
+                        # self.camera_setpoint.rw = q3[3]
+                        # self.camera_setpoint.rx = transform_stamped.transform.rotation.x*self.uav.pos.rx
+                        # self.camera_setpoint.ry = transform_stamped.transform.rotation.y*self.uav.pos.ry
+                        # self.camera_setpoint.rz = transform_stamped.transform.rotation.z*self.uav.pos.rz
+                        # self.camera_setpoint.rw = transform_stamped.transform.rotation.w*self.uav.pos.rw
                         self.camera_setpoint.rx = transform_stamped.transform.rotation.x
                         self.camera_setpoint.ry = transform_stamped.transform.rotation.y
                         self.camera_setpoint.rz = transform_stamped.transform.rotation.z
                         self.camera_setpoint.rw = transform_stamped.transform.rotation.w
                         self.detected = True
 
-                        # Filter z setpoints
                         if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
                             self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
                         else:
@@ -116,6 +141,7 @@ class offboard_node():
                             self.median_height += 0.2 * np.sign(z - self.median_height)
                             self.camera_setpoint.z = self.median_height
 
+                        # print(self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
 
                         self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
 
@@ -139,7 +165,6 @@ class offboard_node():
             self.final_transform.transform.rotation.z  = self.camera_setpoint.rz
             self.final_transform.transform.rotation.w  = self.camera_setpoint.rw
             camera_setpoint_broadcaster.sendTransform(self.final_transform) #TODO TEST
-
 
             current_yaw=euler.quat2euler([self.uav.pos.rw,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz])[2] #wxyz default
             setpoint_yaw=euler.quat2euler([self.camera_setpoint.rw,self.camera_setpoint.rx,self.camera_setpoint.ry,self.camera_setpoint.rz])[2] #wxyz default
@@ -190,11 +215,11 @@ class offboard_node():
             # Drone not at GPS Setpoint, send global coordinates
             else:
                 if self.stage=="disarmed":
-                    self.uav.setpoint(self.uav.pos.x, self.uav.pos.y, self.uav.pos.z) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
-                    rospy.loginfo_throttle_identical(5,"Hovering at Setpoint[%s,%s,%s]", self.uav.pos.x, self.uav.pos.y, self.uav.pos.z)
+                    self.uav.setpoint_global(self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y)) # GPS Altitude doesnt seem to be stable, so just hover at current height (with conversion)
+                    rospy.loginfo_throttle_identical(5,"Sending GPS Setpoint[%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
                 elif self.stage=="survey":
-                    self.uav.continous_survey()
-                    rospy.loginfo_throttle_identical(5,"On Survey Setpoint at [%s,%s,%s]", self.uav.pos.x, self.uav.pos.y, self.uav.pos.z)
+                    self.uav.survey()
+                    rospy.loginfo_throttle_identical(5,"On GPS Survey Setpoint at [%s,%s,%s]", self.uav.global_pos.x, self.uav.global_pos.y, self.uav.global_pos.z-_egm96.height(self.uav.global_pos.x, self.uav.global_pos.y))
 
             self.rosrate.sleep()
 
@@ -218,12 +243,6 @@ class offboard_node():
             self.anchor_pos.x = self.uav.pos.x
             self.anchor_pos.y = self.uav.pos.y
             self.anchor_pos.z = self.uav.pos.z
-            rospy.logwarn_throttle_identical(1,"Using [%s,%s,%s] as anchor points",self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
-            new_arr=[]
-            for i in sp_arr:
-                new_arr.append([i[0]-self.anchor_pos.x,i[1]-self.anchor_pos.y,i[2]-self.anchor_pos.z])
-            self.uav.continous_survey_update(new_arr)
-            rospy.logwarn_once("Finished updating anchor setpoints")
 
 
 if __name__ == '__main__':
