@@ -142,7 +142,7 @@ class uav():
     def global_survey(self, threshold = 0.0000001):
 
         # XY coordinates given, z assmed to be at current height
-        if len(self.global_survey_array[0] == 2):
+        if len(self.global_survey_array[0]) == 2:
             if len(self.global_survey_array) != 0:
                 self.setpoint_global(self.global_survey_array[0][0],self.global_survey_array[0][1],self.global_pos.z) # Return first position in the array
                 if abs(self.global_survey_array[0][0] - self.global_pos.x) < threshold and abs(self.global_survey_array[0][1] - self.global_pos.y) < threshold:
@@ -154,7 +154,7 @@ class uav():
                 return 0 # Ended
             
         # XYZ coordinates given
-        elif len(self.global_survey_array[0] == 1):
+        elif len(self.global_survey_array[0]) == 1:
                 if len(self.global_survey_array) != 0:
                     self.setpoint_global(self.global_survey_array[0][0],self.global_survey_array[0][1],self.global_survey_array[0][2]) # Return first position in the array
                     if abs(self.global_survey_array[0][0] - self.global_pos.x) < threshold and abs(self.global_survey_array[0][1] - self.global_pos.y) < threshold and abs(self.global_survey_array[0][2] - self.global_pos.z) < threshold:
@@ -171,7 +171,7 @@ class uav():
     # Local setpoint survey through an array
     def survey(self, threshold = 0.1):
 
-        if len(self.survey_array[0] == 2):
+        if len(self.survey_array[0]) == 2:
             if len(self.survey_array) != 0:
                 self.setpoint(self.survey_array[0][0],self.survey_array[0][1],self.pos.z) # Return first position in the array
                 if abs(self.survey_array[0][0] - self.pos.x) < threshold and abs(self.survey_array[0][1] - self.pos.y) < threshold:
@@ -182,7 +182,7 @@ class uav():
                 self.setpoint(self.pos.x,self.pos.y,self.pos.z)
                 return 0 # Ended
             
-        elif len(self.survey_array[0] == 3):
+        elif len(self.survey_array[0]) == 3:
             if len(self.survey_array) != 0:
                 self.setpoint(self.survey_array[0][0],self.survey_array[0][1],self.survey_array[0][2]) # Return first position in the array
                 if abs(self.survey_array[0][0] - self.pos.x) < threshold and abs(self.survey_array[0][1] - self.pos.y) < threshold and abs(self.survey_array[0][2] - self.pos.z) < threshold:
@@ -200,7 +200,7 @@ class uav():
     def continous_survey(self, threshold = 0.1):
 
         # rospy.logerr("Currently at waypoint %s",str(self.continous_survey_pos)) #####
-        if len(self.survey_array_z[0] == 2):
+        if len(self.survey_array_z[0]) == 2:
             self.setpoint(self.survey_array_z[self.continous_survey_pos][0],self.survey_array_z[self.continous_survey_pos][1],self.pos.z) # Return first position in the array
             if abs(float(self.survey_array_z[self.continous_survey_pos][0] - self.pos.x)) < threshold and abs(float(self.survey_array_z[self.continous_survey_pos][1]) - self.pos.y) < threshold:
                 if self.continous_survey_pos == (len(self.survey_array_z)-1):
@@ -210,7 +210,7 @@ class uav():
                     rospy.loginfo("Currently at waypoint %s, moving to next waypoint",str(self.continous_survey_pos))
                     self.continous_survey_pos = self.continous_survey_pos + 1 # += doesnt seem to work properly
 
-        elif len(self.survey_array_z[0] == 3):
+        elif len(self.survey_array_z[0]) == 3:
             self.setpoint(self.survey_array_z[self.continous_survey_pos][0],self.survey_array_z[self.continous_survey_pos][1],self.survey_array_z[self.continous_survey_pos][2]) # Return first position in the array
             if abs(float(self.survey_array_z[self.continous_survey_pos][0] - self.pos.x)) < threshold and abs(float(self.survey_array_z[self.continous_survey_pos][1]) - self.pos.y) < threshold and abs(float(self.survey_array_z[self.continous_survey_pos][2] - self.pos.z)) < threshold:
                 if self.continous_survey_pos == (len(self.survey_array_z)-1):

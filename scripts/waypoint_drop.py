@@ -42,7 +42,7 @@ class offboard_node():
     def __init__(self):
         print("Initalising Offboard Waypoint Drop Node")
 
-        self.uav = uav(survey_array=sp_arr) # Initalise UAV object
+        self.uav = uav(survey_array_cont=sp_arr) # Initalise UAV object
         self.uav.init_controller("close",0.7,0.1,0.7,0.1,0.8,0.8,0.1,0.0625) # Initalise additional controllers
         self.camera_setpoint = uav_variables() # Initalise a set of variables to store camera setpoints
 
