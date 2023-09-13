@@ -32,7 +32,7 @@ threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
 # Setpoint array
-sp_arr = [0,0],[5,0]
+sp_arr = [0,0],[3,0]
 
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
@@ -73,6 +73,8 @@ class offboard_node():
         self.stage="survey"
         deployment_times = 0
         self.detected = False
+        
+        self.mode = ""
 
         self.median_height = 3.2 # default height
 
@@ -150,7 +152,7 @@ class offboard_node():
             #     self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
             
             # Camera detected droppoint, switching from GPS to local setpoint mode
-            if self.detected == True :
+            if self.detected == True  and self.anchor_pos_bool == True:
                 rospy.logwarn_once("Detected Transform")
                 
                 # Align X and Y first before changing altitude due to unstable height measurements from the laser rangefinger when moving
@@ -213,7 +215,9 @@ class offboard_node():
         rospy.signal_shutdown("Node shutting down")
 
     def mavros_state_callback(self, msg):
-        if msg=="OFFBOARD" and self.anchor_pos_bool == False:
+        #rospy.logwarn_throttle_identical(1,msg.mode)
+        self.mode = msg.mode
+        if msg.mode=="OFFBOARD" and self.anchor_pos_bool == False:
             self.anchor_pos_bool = True
             self.anchor_pos.x = self.uav.pos.x
             self.anchor_pos.y = self.uav.pos.y
@@ -221,9 +225,10 @@ class offboard_node():
             rospy.logwarn_throttle_identical(1,"Using [%s,%s,%s] as anchor points",self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
             new_arr=[]
             for i in sp_arr:
-                new_arr.append([i[0]-self.anchor_pos.x,i[1]-self.anchor_pos.y,i[2]-self.anchor_pos.z])
+                new_arr.append([i[0]-self.anchor_pos.x,i[1]-self.anchor_pos.y])
             self.uav.continous_survey_update(new_arr)
             rospy.logwarn_once("Finished updating anchor setpoints")
+            rospy.logwarn_once(self.uav.survey_array_z)
 
 
 if __name__ == '__main__':
