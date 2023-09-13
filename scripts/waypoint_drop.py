@@ -48,7 +48,7 @@ class offboard_node():
 
         self.camera_to_body = uav_variables()
         self.prev_camera_to_body = uav_variables()
-
+        
         self.setpoint_latitude=coordinates.latitude
         self.setpoint_longitude=coordinates.longitude
         # self.setpoint_altitude=coordinates.altitude
@@ -97,7 +97,10 @@ class offboard_node():
                 self.camera_to_body.save_tf2(transform_camera_to_body)
                 rospy.loginfo_once("Detected Transform from camera")
                 # Check if the previous camera to body transformation has changed
-                if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw:
+                if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw or self.camera_to_body.x != 0 or self.camera_to_body.y != 0 or self.camera_to_body.z != 0:
+
+                    self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
+                    self.detected = True
 
                     try:
                         # Find global to local transformation and perform transformation to mavros local frame
@@ -108,8 +111,8 @@ class offboard_node():
                         self.camera_setpoint.ry = transform_stamped.transform.rotation.y
                         self.camera_setpoint.rz = transform_stamped.transform.rotation.z
                         self.camera_setpoint.rw = transform_stamped.transform.rotation.w
-                        self.detected = True
 
+                        self.camera_setpoint.z = transform_stamped.transform.translation.z
                         # # Filter z setpoints
                         # if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
                         #     self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
@@ -119,10 +122,16 @@ class offboard_node():
                         #     self.camera_setpoint.z = self.median_height
 
 
-                        self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
-
                     except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                         rospy.logdebug("Missing body setpoint tf transform")
+                else:
+                    self.camera_setpoint.x = self.uav.pos.x
+                    self.camera_setpoint.y = self.uav.pos.y
+                    self.camera_setpoint.z = self.uav.pos.z
+                    self.camera_setpoint.rx = self.uav.pos.rx
+                    self.camera_setpoint.ry = self.uav.pos.ry
+                    self.camera_setpoint.rz = self.uav.pos.rz
+                    self.camera_setpoint.rw = self.uav.pos.rw
 
 
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
@@ -226,7 +235,7 @@ class offboard_node():
             rospy.logwarn_throttle_identical(1,"Using [%s,%s,%s] as anchor points",self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
             new_arr=[]
             for i in sp_arr:
-                new_arr.append([i[0]-self.anchor_pos.x,i[1]-self.anchor_pos.y])
+                new_arr.append([i[0] + self.anchor_pos.x,i[1] + self.anchor_pos.y])
             self.uav.continous_survey_update(new_arr)
             rospy.logwarn_once("Finished updating anchor setpoints")
             rospy.logwarn_once(self.uav.survey_array_z)
