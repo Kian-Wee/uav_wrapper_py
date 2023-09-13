@@ -23,8 +23,8 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_dist = 0.5 # used for range sensor, +ve is forward
-contact_threshold = 0.01 # UAV is assumed to be touching the wall at this distance
-wall_threshold = 0.8 # Will only proceed with deployment if probability is equals or higher than this threshold
+contact_threshold = 0.02 # UAV is assumed to be touching the wall at this distance
+wall_threshold = 0.95 # Will only proceed with deployment if probability is equals or higher than this threshold
 
 # Camera Topic for desired setpoint
 camera_setpoint_topic="tf"
