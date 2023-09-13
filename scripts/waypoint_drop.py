@@ -18,7 +18,7 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
-payload_drop_height=0.5 # 0.5 
+payload_drop_height=1.5 # 0.5 
 
 # Camera tf frames for desired setpoint
 camera_frame_id="pole"
@@ -32,7 +32,7 @@ threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
 # Setpoint array
-sp_arr = [0,0],[3,0]
+sp_arr = [0,0],[0,5],[5,5],[5,0],[10,0],[10,5]
 
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 # ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
@@ -110,13 +110,13 @@ class offboard_node():
                         self.camera_setpoint.rw = transform_stamped.transform.rotation.w
                         self.detected = True
 
-                        # Filter z setpoints
-                        if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
-                            self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
-                        else:
-                            z = transform_stamped.transform.translation.z- payload_drop_height
-                            self.median_height += 0.2 * np.sign(z - self.median_height)
-                            self.camera_setpoint.z = self.median_height
+                        # # Filter z setpoints
+                        # if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
+                        #     self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
+                        # else:
+                        #     z = transform_stamped.transform.translation.z- payload_drop_height
+                        #     self.median_height += 0.2 * np.sign(z - self.median_height)
+                        #     self.camera_setpoint.z = self.median_height
 
 
                         self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
@@ -151,6 +151,7 @@ class offboard_node():
             # if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
             #     self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
             
+            
             # Camera detected droppoint, switching from GPS to local setpoint mode
             if self.detected == True  and self.anchor_pos_bool == True:
                 rospy.logwarn_once("Detected Transform")
@@ -179,7 +180,7 @@ class offboard_node():
                             rospy.loginfo_throttle_identical(2,"Disarming")
                             self.stage="disarmed"
                             self.write_serial(self.stage)
-                            deployment_times +=1
+                            deployment_times = deployment_times + 1
                     else:
                         rospy.logwarn_throttle_identical(10,"Deployment over")
                         self.uav.setpoint_controller(self.camera_setpoint,"close")
