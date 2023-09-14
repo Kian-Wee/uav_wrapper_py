@@ -261,6 +261,14 @@ class offboard_node():
                         self.write_serial(self.stage)
                         self.stage="payload_reset"
                         self.write_serial(self.stage)
+                        self.stage="payload_drop"
+                        self.write_serial(self.stage)
+                        self.stage="payload_reset"
+                        self.write_serial(self.stage)
+                        self.stage="payload_drop"
+                        self.write_serial(self.stage)
+                        self.stage="payload_reset"
+                        self.write_serial(self.stage)
                         norm_thrust = 0
                         self.write_serial(str(norm_thrust)) # Set thruster to 0
                         self.stage="disarmed"
