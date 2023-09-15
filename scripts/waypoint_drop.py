@@ -70,6 +70,8 @@ class offboard_node():
 
         self.reset_timer=time.time()
         self.reset_dur=1
+        self.halt_timer=time.time()
+        self.halt_dur=5
         self.stage="survey"
         deployment_times = 0
         self.detected = False
@@ -183,16 +185,23 @@ class offboard_node():
                 elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) < threshold_jog_deg:
                     rospy.logwarn_throttle_identical(2,"UAV At Camera Setpoint[%s,%s,%s], dropping",self.camera_setpoint.x,self.camera_setpoint.y,self.camera_setpoint.z)
                     if deployment_times <max_deployment_times:
-                        if (self.stage=="disarmed" or self.stage=="survey"):
+                        if (self.stage=="survey"):
+                            rospy.loginfo_throttle_identical(2,"Halting and stabalising at setpoint")
+                            self.halt_dur_timer=rospy.get_time()
+                            self.stage = "halt"
+                        elif (self.stage=="halt" and time.time()>=self.halt_timer + self.halt_dur):
                             rospy.loginfo_throttle_identical(2,"Releasing Payload")
                             self.stage="payload_drop"
                             self.write_serial(self.stage)
-                            self.reset_timer=rospy.get_time()
-                        if (self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
+                            self.reset_timer=time.time()
+                        elif (self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_throttle_identical(2,"Disarming")
                             self.stage="disarmed"
                             self.write_serial(self.stage)
                             deployment_times = deployment_times + 1
+                        else:
+                            rospy.loginfo_throttle_identical(5,"Setpoint within threshold, in between modes")
+                            self.uav.setpoint_controller(self.camera_setpoint,"close")
                     else:
                         rospy.logwarn_throttle_identical(10,"Deployment over")
                         self.uav.setpoint_controller(self.camera_setpoint,"close")
