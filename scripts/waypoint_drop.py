@@ -165,11 +165,17 @@ class offboard_node():
             # if self.camera_setpoint.x == 0 and self.camera_setpoint.y ==0 and self.camera_setpoint.z ==0:
             #     self.uav.setpoint_quat(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.uav.pos.rx,self.uav.pos.ry,self.uav.pos.rz,self.uav.pos.rw) #callback local position
             
+            # Return to home at the end of mission
+            if self.stage=="RTH":
+                rospy.logwarn_once("Retrning to Home")
+                self.stage="disarmed"
+                self.write_serial(self.stage)
+                self.uav.setpoint(self.uav.survey_array_z[0][0],self.uav.survey_array_z[0][1],self.uav.survey_array_z[0][2])
             
             # Camera detected droppoint, switching from GPS to local setpoint mode
-            if self.detected == True  and self.anchor_pos_bool == True:
+            elif self.detected == True  and self.anchor_pos_bool == True:
                 rospy.logwarn_once("Detected Transform")
-                
+
                 # Align X and Y first before changing altitude due to unstable height measurements from the laser rangefinger when moving
                 if abs(self.camera_setpoint.x - self.uav.pos.x) > threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) > threshold_jog:
                     self.camera_setpoint.z=self.uav.pos.z # Override height with current altitude
@@ -189,19 +195,21 @@ class offboard_node():
                             rospy.loginfo_throttle_identical(2,"Halting and stabalising at setpoint")
                             self.halt_dur_timer=rospy.get_time()
                             self.stage = "halt"
+                            self.uav.setpoint_controller(self.camera_setpoint,"close")
                         elif (self.stage=="halt" and time.time()>=self.halt_timer + self.halt_dur):
                             rospy.loginfo_throttle_identical(2,"Releasing Payload")
                             self.stage="payload_drop"
                             self.write_serial(self.stage)
                             self.reset_timer=time.time()
+                            self.uav.setpoint_controller(self.camera_setpoint,"close")
                         elif (self.stage=="payload_drop" and time.time()>=self.reset_timer+self.reset_dur):
                             rospy.loginfo_throttle_identical(2,"Disarming")
-                            self.stage="disarmed"
-                            self.write_serial(self.stage)
+                            self.stage="RTH"
+                            self.uav.setpoint_controller(self.camera_setpoint,"close")
                             deployment_times = deployment_times + 1
                         else:
                             rospy.loginfo_throttle_identical(5,"Setpoint within threshold, in between modes")
-                            self.uav.setpoint_controller(self.camera_setpoint,"close")
+                        self.uav.setpoint_controller(self.camera_setpoint,"close")
                     else:
                         rospy.logwarn_throttle_identical(10,"Deployment over")
                         self.uav.setpoint_controller(self.camera_setpoint,"close")
