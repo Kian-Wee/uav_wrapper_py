@@ -94,53 +94,54 @@ class offboard_node():
             which means that performing the whole transform will result in an outdated object if the uav is moving
             Side note: last parameter for lookuptransform is an optional blocking timeout https://docs.ros.org/en/galactic/Tutorials/Intermediate/Tf2/Learning-About-Tf2-And-Time-Cpp.html
             '''
-            try:
-                transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, target_frame_id, rospy.Time(0))
-                self.camera_to_body.save_tf2(transform_camera_to_body)
-                rospy.loginfo_once("Detected Transform from camera")
-                # Check if the previous camera to body transformation has changed
-                if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw or self.camera_to_body.x != 0 or self.camera_to_body.y != 0 or self.camera_to_body.z != 0:
+            if self.mode == "OFFBOARD":
+                try:
+                    transform_camera_to_body = self.tfBuffer_cameratotarget.lookup_transform(base_frame_id, target_frame_id, rospy.Time(0))
+                    self.camera_to_body.save_tf2(transform_camera_to_body)
+                    rospy.loginfo_once("Detected Transform from camera")
+                    # Check if the previous camera to body transformation has changed
+                    if self.camera_to_body.x != self.prev_camera_to_body.x or self.camera_to_body.y != self.prev_camera_to_body.y or self.camera_to_body.z != self.prev_camera_to_body.z or self.camera_to_body.rw != self.prev_camera_to_body.rw or self.camera_to_body.x != 0 or self.camera_to_body.y != 0 or self.camera_to_body.z != 0:
 
-                    self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
-                    self.detected = True
+                        self.prev_camera_to_body.save_tf2(transform_camera_to_body) #Update prior transformation
+                        self.detected = True
 
-                    try:
-                        # Find global to local transformation and perform transformation to mavros local frame
-                        transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
-                        self.camera_setpoint.x = transform_stamped.transform.translation.x
-                        self.camera_setpoint.y = transform_stamped.transform.translation.y
-                        self.camera_setpoint.rx = transform_stamped.transform.rotation.x
-                        self.camera_setpoint.ry = transform_stamped.transform.rotation.y
-                        self.camera_setpoint.rz = transform_stamped.transform.rotation.z
-                        self.camera_setpoint.rw = transform_stamped.transform.rotation.w
+                        try:
+                            # Find global to local transformation and perform transformation to mavros local frame
+                            transform_stamped = self.tfBuffer_worldtotarget.lookup_transform(world_frame_id, target_frame_id, rospy.Time(0))
+                            self.camera_setpoint.x = transform_stamped.transform.translation.x
+                            self.camera_setpoint.y = transform_stamped.transform.translation.y
+                            self.camera_setpoint.rx = transform_stamped.transform.rotation.x
+                            self.camera_setpoint.ry = transform_stamped.transform.rotation.y
+                            self.camera_setpoint.rz = transform_stamped.transform.rotation.z
+                            self.camera_setpoint.rw = transform_stamped.transform.rotation.w
 
-                        # self.camera_setpoint.z = transform_stamped.transform.translation.z
-                        self.camera_setpoint.z = transform_stamped.transform.translation.z
-                        # self.median_height += 0.2 * np.sign(z - self.median_height)
-                        # self.camera_setpoint.z = self.median_height
-                        # Filter z setpoints
-                        # if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
-                        #     self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
-                        # else:
-                        #     z = transform_stamped.transform.translation.z- payload_drop_height
-                        #     self.median_height += 0.2 * np.sign(z - self.median_height)
-                        #     self.camera_setpoint.z = self.median_height
-
-
-                    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                        rospy.logdebug("Missing body setpoint tf transform")
-                else:
-                    self.camera_setpoint.x = self.uav.pos.x
-                    self.camera_setpoint.y = self.uav.pos.y
-                    self.camera_setpoint.z = self.uav.pos.z
-                    self.camera_setpoint.rx = self.uav.pos.rx
-                    self.camera_setpoint.ry = self.uav.pos.ry
-                    self.camera_setpoint.rz = self.uav.pos.rz
-                    self.camera_setpoint.rw = self.uav.pos.rw
+                            # self.camera_setpoint.z = transform_stamped.transform.translation.z
+                            self.camera_setpoint.z = transform_stamped.transform.translation.z
+                            # self.median_height += 0.2 * np.sign(z - self.median_height)
+                            # self.camera_setpoint.z = self.median_height
+                            # Filter z setpoints
+                            # if self.camera_to_body.z < 0 or self.camera_to_body.z > 1.5:
+                            #     self.camera_setpoint.z = self.uav.pos.z # Reject any outlier readings
+                            # else:
+                            #     z = transform_stamped.transform.translation.z- payload_drop_height
+                            #     self.median_height += 0.2 * np.sign(z - self.median_height)
+                            #     self.camera_setpoint.z = self.median_height
 
 
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                rospy.logdebug("Missing tf transform")
+                        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                            rospy.logdebug("Missing body setpoint tf transform")
+                    else:
+                        self.camera_setpoint.x = self.uav.pos.x
+                        self.camera_setpoint.y = self.uav.pos.y
+                        self.camera_setpoint.z = self.uav.pos.z
+                        self.camera_setpoint.rx = self.uav.pos.rx
+                        self.camera_setpoint.ry = self.uav.pos.ry
+                        self.camera_setpoint.rz = self.uav.pos.rz
+                        self.camera_setpoint.rw = self.uav.pos.rw
+
+
+                except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                    rospy.logdebug("Missing tf transform")
 
             # Send out position for visualisation
             self.final_transform= tf2_ros.TransformStamped()
