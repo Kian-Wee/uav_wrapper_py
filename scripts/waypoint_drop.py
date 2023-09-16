@@ -18,7 +18,7 @@ rate = 60 # Update rate
 
 # For alignment of camera_frame to drone_frame(CG), in m
 cameratobody_x = 0 # +ve is forward
-payload_drop_height=1.5 # 0.5 
+payload_drop_height=1.5 # 0.5
 
 # Camera tf frames for desired setpoint
 camera_frame_id="pole"
@@ -34,8 +34,7 @@ max_deployment_times = 1
 # Setpoint array
 sp_arr = [0,0],[0,5],[5,5],[5,0],[10,0],[10,5]
 
-# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
-# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
+ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 
 class offboard_node():
 
@@ -80,7 +79,7 @@ class offboard_node():
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
-
+        
 
         while not rospy.is_shutdown():
 
@@ -216,7 +215,7 @@ class offboard_node():
 
     def write_serial(self,msg):
         if msg != self.prev_msg:
-            # ser.write(str.encode(str(msg)+ "\n"))
+            ser.write(str.encode(str(msg)+ "\n"))
             self.prev_msg = msg
             time.sleep(0.075) # Needed for ESP32C3 to read consecutive serial commands
 
@@ -224,7 +223,7 @@ class offboard_node():
     def quit(self):
         print("Killing node")
         self.write_serial("disarmed")
-        # ser.close()
+        ser.close()
         rospy.signal_shutdown("Node shutting down")
 
     def mavros_state_callback(self, msg):
