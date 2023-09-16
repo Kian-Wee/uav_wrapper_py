@@ -34,8 +34,7 @@ max_deployment_times = 1
 # Setpoint array
 sp_arr = [0,0],[0,5],[5,5],[5,0],[10,0],[10,5]
 
-# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
-# ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_F4:12:FA:D8:DA:58-if00', 115200) #ls /dev/serial/by-id/*
+ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 
 class offboard_node():
 
@@ -85,6 +84,7 @@ class offboard_node():
 
 
         while not rospy.is_shutdown():
+
 
             '''
             Constantly poll to see if transform is found to object and align to it thereafter
@@ -170,8 +170,9 @@ class offboard_node():
                 rospy.logwarn_once("Retrning to Home")
                 self.stage="disarmed"
                 self.write_serial(self.stage)
-                self.uav.setpoint(self.uav.survey_array_z[0][0],self.uav.survey_array_z[0][1],self.uav.survey_array_z[0][2])
-            
+                self.uav.setpoint(self.uav.survey_array_z[0][0],self.uav.survey_array_z[0][1],self.anchor_pos.z)
+
+
             # Camera detected droppoint, switching from GPS to local setpoint mode
             elif self.detected == True  and self.anchor_pos_bool == True:
                 rospy.logwarn_once("Detected Transform")
@@ -197,7 +198,7 @@ class offboard_node():
                             self.stage = "halt"
                             self.uav.setpoint_controller(self.camera_setpoint,"close")
                         elif (self.stage=="halt" and time.time()>=self.halt_timer + self.halt_dur):
-                            rospy.loginfo_throttle_identical(2,"Releasing Payload")
+                            rospy.logwarn_throttle_identical(2,"Releasing Payload")
                             self.stage="payload_drop"
                             self.write_serial(self.stage)
                             self.reset_timer=time.time()
@@ -233,15 +234,15 @@ class offboard_node():
 
     def write_serial(self,msg):
         if msg != self.prev_msg:
-            # ser.write(str.encode(str(msg)+ "\n"))
+            ser.write(str.encode(str(msg)+ "\n"))
             self.prev_msg = msg
-            time.sleep(0.075) # Needed for ESP32C3 to read consecutive serial commands
+            time.sleep(0.2) # 0.075 Needed for ESP32C3 to read consecutive serial commands
 
 
     def quit(self):
         print("Killing node")
         self.write_serial("disarmed")
-        # ser.close()
+        ser.close()
         rospy.signal_shutdown("Node shutting down")
 
     def mavros_state_callback(self, msg):
@@ -255,7 +256,7 @@ class offboard_node():
             rospy.logwarn_throttle_identical(1,"Using [%s,%s,%s] as anchor points",self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
             new_arr=[]
             for i in sp_arr:
-                new_arr.append([i[0] + self.anchor_pos.x,i[1] + self.anchor_pos.y])
+                new_arr.append([i[0] + self.anchor_pos.x,i[1] + self.anchor_pos.y,self.anchor_pos.z])
             self.uav.continous_survey_update(new_arr)
             rospy.logwarn_once("Finished updating anchor setpoints")
             rospy.logwarn_once(self.uav.survey_array_z)
