@@ -1,5 +1,5 @@
 <launch>
-   <!-- <node pkg="uav_wrapper_py" type="waypoint_drop.py" name="waypoint_drop"/> -->
-    <node pkg="tf" type="static_transform_publisher" name="body_setpoint_publisher" args=" -1.5 0 -0.5  0 -1.57079632679 0  /pole /body_setpoint 100" /> 
+   <!-- <node pkg="uav_wrapper_py" type="waypoint_drop.py" name="waypoint_drop"/> BOTTOM RIGHT BEHIND -->
+    <node pkg="tf" type="static_transform_publisher" name="body_setpoint_publisher" args=" -1.5 0.2 0.5  0 -1.57079632679 0  /pole /body_setpoint 100" /> 
     <!-- <include file="$(find uav_wrapper_py)/launch/vrpn_lamppost.launch"/> -->
 </launch>

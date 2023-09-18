@@ -27,7 +27,7 @@ world_frame_id="map"
 target_frame_id="body_setpoint"
 
 # Threshold for jogging, when setpoint is under these conditions, drone will jog instead
-threshold_jog=0.2 #m
+threshold_jog=0.1 #m
 threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
@@ -68,7 +68,7 @@ class offboard_node():
         self.anchor_pos=uav_variables()
 
         self.reset_timer=time.time()
-        self.reset_dur=1
+        self.reset_dur=5
         self.halt_timer=time.time()
         self.halt_dur=5
         self.stage="survey"
@@ -168,10 +168,11 @@ class offboard_node():
             
             # Return to home at the end of mission
             if self.stage=="RTH":
-                rospy.logwarn_once("Retrning to Home")
+                rospy.logwarn_throttle_identical(2,"Returning to Home at[%s,%s,%s]",self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
+                # rospy.logwarn_once("Returning to Home")
                 self.stage="disarmed"
                 self.write_serial(self.stage)
-                self.uav.setpoint(self.uav.survey_array_z[0][0],self.uav.survey_array_z[0][1],self.anchor_pos.z)
+                self.uav.setpoint(self.anchor_pos.x,self.anchor_pos.y,self.anchor_pos.z)
 
 
             # Camera detected droppoint, switching from GPS to local setpoint mode
