@@ -71,6 +71,7 @@ class offboard_node():
         self.reset_dur=5
         self.halt_timer=time.time()
         self.halt_dur=5
+        self.write_serial("disarmed")
         self.stage="survey"
         deployment_times = 0
         self.detected = False
