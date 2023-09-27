@@ -37,7 +37,7 @@ threshold_jog=0.5 #m
 threshold_jog_deg=5 #deg  
 # Rear Thruster Topic
 thruster_output_topic="/thruster/pwm"
-max_thrust=70
+max_thrust=100
 max_deployment_times = 1
 hover_height=1.45
 
@@ -85,7 +85,7 @@ class offboard_node():
         self.spread_timer=999999999999999999999999999999
         self.spread_dur=1.5 #s
         self.adh_timer=999999999999999999999999999999
-        self.adh_dur=5 #s
+        self.adh_dur=10 #s
         self.reset_timer=999999999999999999999999999999
         self.reset_dur=1
 
@@ -279,7 +279,7 @@ class offboard_node():
                         # If not contacted wall yet, scale up thrust linearly
                         if self.wall_dist > contact_threshold:
                             rospy.logwarn_throttle_identical(1,"Wall %sm away",self.wall_dist)
-                            norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * 70)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 50% thrust
+                            norm_thrust = round(((1 - (round(self.wall_dist,2))/(0.5)) * max_thrust)/10)*10 #Scale rear thrust by wall distance from 0 to 0.5m from 0% thrust to 50% thrust
                             self.uav.setpoint_controller(self.last_acceptable_setpoint,"close") # Stop reading new setpoints and cache the setpoint
                             self.send_tf(self.last_acceptable_setpoint.x,self.last_acceptable_setpoint.y,self.last_acceptable_setpoint.z,self.last_acceptable_setpoint.rx,self.last_acceptable_setpoint.ry,self.last_acceptable_setpoint.rz,self.last_acceptable_setpoint.rw)
                         # If contacted wall, set thruster to full and hover at current position to avoid PX4 MPC overcompensating
@@ -344,12 +344,12 @@ class offboard_node():
 
         self.final_setpoint_broadcaster.sendTransform(self.final_transform)
 
-
+    
     def write_serial(self,msg):
         if msg != self.prev_msg:
             ser.write(str.encode(str(msg)+ "\n"))
             self.prev_msg = msg
-            time.sleep(0.075) # Needed for ESP32C3 to read consecutive serial commands
+            time.sleep(0.15) # Time needed for ESP32C3 to read consecutive serial commands (0.075-min, 0.15-conservative), commands might not activate if set too low
 
     
     def quit(self):
