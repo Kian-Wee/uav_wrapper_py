@@ -32,7 +32,7 @@ threshold_jog_deg=10.0 #deg
 max_deployment_times = 1
 
 # Setpoint array
-sp_arr = [0,0],[0,5],[5,5],[5,0],[10,0],[10,5]
+sp_arr = [0,0],[0,5.5],[5,5.5],[5,0],[10,0],[10,5.5]
 
 ser = serial.Serial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_58:CF:79:02:99:0C-if00', 115200) #ls /dev/serial/by-id/*
 
@@ -166,17 +166,17 @@ class offboard_node():
             # Camera detected droppoint, switching from GPS to local setpoint mode
             if self.detected == True  and self.anchor_pos_bool == True:
                 rospy.logwarn_once("Detected Transform")
-                
+
+                # Next add in z movement to align altitude
+                if abs(self.camera_setpoint.z-self.uav.pos.z) > threshold_jog:
+                    self.uav.setpoint_controller(self.camera_setpoint,"close")
+                    rospy.logwarn_throttle_identical(2,"Aligning Z to Camera Setpoint[%s,%s,%s] <--- UAV[%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
+
                 # Align X and Y first before changing altitude due to unstable height measurements from the laser rangefinger when moving
-                if abs(self.camera_setpoint.x - self.uav.pos.x) > threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) > threshold_jog:
+                elif abs(self.camera_setpoint.x - self.uav.pos.x) > threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) > threshold_jog:
                     self.camera_setpoint.z=self.uav.pos.z # Override height with current altitude
                     self.uav.setpoint_controller(self.camera_setpoint,"close")
                     rospy.logwarn_throttle_identical(2,"Aligning XY to Camera Setpoint[%s,%s,%s] <--- UAV[%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
-
-                # Next add in z movement to align altitude
-                elif abs(self.camera_setpoint.z-self.uav.pos.z) > threshold_jog:
-                    self.uav.setpoint_controller(self.camera_setpoint,"close")
-                    rospy.logwarn_throttle_identical(2,"Aligning Z to Camera Setpoint[%s,%s,%s] <--- UAV[%s,%s,%s]",round(self.camera_setpoint.x,2),round(self.camera_setpoint.y,2),round(self.camera_setpoint.z,2),round(self.uav.pos.x,2),round(self.uav.pos.y,2),round(self.uav.pos.z,2))
 
                 # Finally, if it is at drop point, drop payload, assume yaw is aligned by this time
                 elif abs(self.camera_setpoint.x - self.uav.pos.x) < threshold_jog and abs(self.camera_setpoint.y-self.uav.pos.y) < threshold_jog and abs(self.camera_setpoint.z-self.uav.pos.z) < threshold_jog and degrees(abs(setpoint_yaw-current_yaw)) < threshold_jog_deg:
