@@ -26,9 +26,9 @@ self.[variable_name].setpoint(x,y,z) - send an x y z setpoint while mantaining c
 
 self.[variable_name].setpoint_yaw(x,y,z,yaw) - send cartesian and yaw setpoint
 
-self.[variable_name].setpoint_quat(x,y,,z,rx,ry,rw,rz) - send both pose and orientation setpoint
+self.[variable_name].setpoint_quat(x,y,z,rx,ry,rw,rz) - send both pose and orientation setpoint
 
-self.[variable_name].global - send setpoint in latitude longitude and altitude setpoint
+self.[variable_name].global(latitude,longitude,altitude) - send setpoint in latitude longitude and altitude setpoint
 
 
 
@@ -36,9 +36,11 @@ self.[variable_name].survey - conduct survey of array(initialised on creation of
 
 self.[variable_name].continous_survey - conduct survey of array(initialised on creation of class with survey_array_z)
 
+self.[variable_name].continous_survey_update(self, array) - update continous survey array
 
 
-self.[variable_name].init_controller(name, x_k, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd): - initalise controller, leave empty for unused fields
+
+self.[variable_name].init_controller(name, x_k, x_kd, y_kp, y_kd, z_kp, z_kd, yaw_kp, yaw_kd) - initalise controller, leave empty for unused fields
 
 self.[variable_name].setpoint_controller(setpoint,controller_name) - send setpoints via controller
 
