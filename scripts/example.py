@@ -3,6 +3,8 @@
 import rospy
 from uav import uav
 
+# Boilerplate for basic UAV hover
+
 # Update rate
 rate = 60 #60 times every second
 
