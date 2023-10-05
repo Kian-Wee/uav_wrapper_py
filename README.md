@@ -46,4 +46,5 @@ self.[variable_name].setpoint_controller(setpoint,controller_name) - send setpoi
 
 ## Variables
 self.[variable_name].pos.x - local position callback of uav in X axis
+
 self.[variable_name].pos.rx - local position callback of uav in rx quat frame
