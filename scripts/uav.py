@@ -41,6 +41,8 @@ class uav():
         
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
         self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
+        self.attitude_setpoint_publisher = rospy.Publisher("/setpoint_attitude/attitude", PoseStamped, queue_size=1)
+
 
 
     def position_listener_callback(self,msg):
@@ -116,6 +118,20 @@ class uav():
                 # msg.pose.orientation.z = self.pos.rz
         else:
             rospy.logfatal("Invalid/Unsupported setpoint position message type")
+
+    def setpoint_attitude(self,x,y,z,roll=0,pitch=0,yaw=0):
+        msg = PoseStamped()
+        msg.header.frame_id="map"
+        # msg.header.stamp = rospy.get_time()
+        msg.pose.position.x= x
+        msg.pose.position.y= y
+        msg.pose.position.z= z
+        q = _gohlketransforms.quaternion_from_euler(roll, pitch, yaw, 'ryxz')
+        msg.pose.orientation.w = q[0]
+        msg.pose.orientation.x = q[1]
+        msg.pose.orientation.y = q[2]
+        msg.pose.orientation.z = q[3]
+        self.attitude_setpoint_publisher.publish(msg)
 
 
     def setpoint_global(self,x,y,z):
