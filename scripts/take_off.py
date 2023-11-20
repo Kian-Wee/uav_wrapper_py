@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import numpy as np
@@ -9,8 +9,8 @@ from std_msgs.msg import Bool
 from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion
 
-resume_odom_srv = rospy.ServiceProxy('resume_odom', Empty) # Resume odometry
-resume_srv = rospy.ServiceProxy('resume', Empty) # Resume mapping
+resume_odom_srv = rospy.ServiceProxy('/nightray/resume_odom', Empty) # Resume odometry
+resume_srv = rospy.ServiceProxy('/nightray/resume', Empty) # Resume mapping
 
 #take off and yaw test
 # Just wait for 2 signals, arm, takeoff, spin 3 times and land
@@ -23,7 +23,7 @@ class offboard_node():
     def __init__(self):
         print("Initalising Controller")
 
-        self.uav = uav()
+        self.uav = uav(position_topic="nightray/mavros/local_position/pose",setpoint_topic="nightray/mavros/setpoint_position/local",state_topic='nightray/mavros/state')
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
@@ -36,26 +36,30 @@ class offboard_node():
         self.start_callback)
         self.init = 0
 
-        rospy.wait_for_service("/mavros/cmd/arming")
-        arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
+        rospy.wait_for_service("nightray/mavros/cmd/arming")
+        arming_client = rospy.ServiceProxy("nightray/mavros/cmd/arming", CommandBool)
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
         self.takeoff_pos=[0,0,1]
-        self.hover_pos=[0.5,0,1]
+        self.hover_pos=[-0.5,0,1]
         self.threshold = 0.1 #m
 
-        flight_mode_srv = rospy.ServiceProxy('mavros/set_mode', SetMode)
+        self.beginsweep=0
+
+        flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
+
+        if(not resume_odom_srv()):
+            rospy.logerr("Failed to resume odom!")
+        if(not resume_srv()):
+            rospy.logerr("Failed to resume map!")
 
         while not rospy.is_shutdown():
             if self.uav.mode=='OFFBOARD':
                 
                 if self.phase == "waiting":
 
-                    if(not resume_odom_srv()):
-                        rospy.logerr("Failed to resume odom!")
-                    if(not resume_srv()):
-                        rospy.logerr("Failed to resume map!")
+
 
                     if(arming_client.call(arm_cmd).success == True):
                         rospy.loginfo("Vehicle armed")
@@ -73,14 +77,14 @@ class offboard_node():
                     self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2]) # Publish setpoint at x=0, y=0, z=1
                     if abs(self.uav.pos.x - self.takeoff_pos[0]) < self.threshold and abs(self.uav.pos.y - self.takeoff_pos[1]) < self.threshold and abs(self.uav.pos.z - self.takeoff_pos[2]) < self.threshold:
                         rospy.loginfo_once("At take-off setpoint %s, Moving forward",str(self.takeoff_pos))
-                        self.state="Moving"
+                        self.phase="Moving"
 
                 elif self.phase == "Moving":
                     rospy.loginfo_throttle(2,"Moving to setpoint %s",str(self.hover_pos))
                     self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
                     if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
                         rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
-                        self.state="Sweep"
+                        self.phase="Sweep"
 
                 elif self.phase == "Sweep":
                     rospy.loginfo_throttle(2,"Sweeping")
@@ -92,7 +96,8 @@ class offboard_node():
                 else:
                     rospy.loginfo_throttle(2,"No command, hovering at current position")
                     self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
-
+            else:
+                self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) # Pub position callback to allow it to boot into offboard
 
 
             self.rosrate.sleep()
@@ -113,7 +118,7 @@ class offboard_node():
     def slowyaw(self, angle=720, w=10):
         global rate
 
-        yaw = math.degrees(euler_from_quaternion([self.uav_pos.rx, self.uav_pos.ry, self.uav_pos.rz, self.uav_pos.rw])[2])
+        yaw = math.degrees(euler_from_quaternion([self.uav.pos.rx, self.uav.pos.ry, self.uav.pos.rz, self.uav.pos.rw])[2])
 
         if self.beginsweep==0 and int(yaw - angle) != 0:
             self.sweeparr=[]
@@ -137,17 +142,17 @@ class offboard_node():
         # Should never be invoked, left for debugging
         elif self.beginsweep==0 and (yaw - angle) == 0:
             print("Not sweeping as provided angle is the same as current heading")
-            if self.mode=="Sweep":  self.mode="Idle"
+            if self.phase=="Sweep":  self.phase="Idle"
             return angle
         elif self.beginsweep==0:
             print("This message should not be printing. It means that the sweep array is not created properly and it is Not Sweeping.")
-            if self.mode=="Sweep":  self.mode="Idle"
+            if self.phase=="Sweep":  self.phase="Idle"
             return angle
         else:
             if self.sweeparr==[]:
-                if self.mode == "Sweep": # In go there, swap the mode change
+                if self.phase == "Sweep": # In go there, swap the mode change
                     print("Sweep ended")
-                    self.mode="Idle"
+                    self.phase="Idle"
                 return angle
                 # return math.degrees(euler_from_quaternion([self.uav_pos.rx,self.uav_pos.ry,self.uav_pos.rz,self.uav_pos.rw])[2]) # return the current position (else it defaults to 0)
         

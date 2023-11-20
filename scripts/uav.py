@@ -93,7 +93,7 @@ class uav():
             rospy.logfatal("Invalid/Unsupported local position message type")
 
 
-    def position_listener_callback(self,msg):
+    def state_listener_callback(self,msg):
         self.mode = str(msg.mode)
 
     # Send setpoint directly to px4's MPC controller without any rotation
