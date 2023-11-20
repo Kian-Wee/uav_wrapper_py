@@ -46,6 +46,7 @@ class offboard_node():
         self.threshold = 0.1 #m
 
         self.beginsweep=0
+        self.sweeparr=[]
 
         flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
 
@@ -117,6 +118,7 @@ class offboard_node():
     # Take note that both the inputs and the outputs are in DEGREES, not radians
     def slowyaw(self, angle=720, w=10):
         global rate
+        print("rate",rate)
 
         yaw = math.degrees(euler_from_quaternion([self.uav.pos.rx, self.uav.pos.ry, self.uav.pos.rz, self.uav.pos.rw])[2])
 
