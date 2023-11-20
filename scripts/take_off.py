@@ -5,6 +5,7 @@ import numpy as np
 from uav import uav
 from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest
 import math
+from std_msgs.msg import Bool
 from tf.transformations import euler_from_quaternion
 
 #take off and yaw test
@@ -23,7 +24,13 @@ class offboard_node():
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
 
-        self.phase = "waiting"
+        self.phase = "uninit"
+
+        rospy.Subscriber(
+        "/mapping_takeoff",
+        Bool,
+        self.start_callback)
+        self.init = 0
 
         rospy.wait_for_service("/mavros/cmd/arming")
         arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
@@ -83,6 +90,11 @@ class offboard_node():
     def quit(self):
         print("Killing node")
         rospy.signal_shutdown("Node shutting down")
+
+    def start_callback(self, msg):
+        if msg.data == 1 and self.init == 0:
+            self.init = 1
+            self.phase = "waiting"
 
     # Slows down sweep to a slower predefined speed, function is made to be non-blocking and returns a slowed down yaw without altering the position
     # w is angular velocity in degrees per second
