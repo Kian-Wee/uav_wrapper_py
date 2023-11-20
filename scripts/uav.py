@@ -3,6 +3,7 @@ from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
+from mavros_msgs.msg import State
 from sensor_msgs.msg import NavSatFix
 from transforms3d import _gohlketransforms,euler
 import tf
@@ -17,7 +18,7 @@ class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
     def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
-                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[],survey_array_cont=[]):
+                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[],survey_array_cont=[],state_topic='/mavros/state'):
         self.position_topic=name+position_topic
         self.setpoint_topic=name+setpoint_topic
         self.tf_world_frame=name+tf_world_frame
@@ -29,6 +30,7 @@ class uav():
         self.survey_array_z=survey_array_cont
         self.global_survey_array=global_survey_array
         self.continous_survey_pos=0
+        self.state_topic=state_topic
 
         self.pos=uav_variables()
         rospy.Subscriber(
@@ -41,6 +43,12 @@ class uav():
         
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
         self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
+
+        self.mode=''
+        rospy.Subscriber(
+            self.state_topic,
+            State,
+            self.state_listener_callback)
 
 
     def position_listener_callback(self,msg):
@@ -84,6 +92,9 @@ class uav():
         else:
             rospy.logfatal("Invalid/Unsupported local position message type")
 
+
+    def position_listener_callback(self,msg):
+        self.mode = str(msg.mode)
 
     # Send setpoint directly to px4's MPC controller without any rotation
     # Roll and pitch are assumed to be 0 for simplicity as /setpoint_position/local does not take it into account anyways
