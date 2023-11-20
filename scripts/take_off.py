@@ -6,7 +6,11 @@ from uav import uav
 from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest
 import math
 from std_msgs.msg import Bool
+from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion
+
+resume_odom_srv = rospy.ServiceProxy('resume_odom', Empty) # Resume odometry
+resume_srv = rospy.ServiceProxy('resume', Empty) # Resume mapping
 
 #take off and yaw test
 # Just wait for 2 signals, arm, takeoff, spin 3 times and land
@@ -47,6 +51,12 @@ class offboard_node():
             if self.uav.mode=='OFFBOARD':
                 
                 if self.phase == "waiting":
+
+                    if(not resume_odom_srv()):
+                        rospy.logerr("Failed to resume odom!")
+                    if(not resume_srv()):
+                        rospy.logerr("Failed to resume map!")
+
                     if(arming_client.call(arm_cmd).success == True):
                         rospy.loginfo("Vehicle armed")
                         self.phase="armed"
