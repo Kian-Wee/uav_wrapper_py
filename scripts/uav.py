@@ -8,6 +8,7 @@ from sensor_msgs.msg import NavSatFix
 from transforms3d import _gohlketransforms,euler
 import tf
 from controller import controller
+import math
 from pygeodesy.geoids import GeoidPGM
 _egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 
@@ -248,7 +249,7 @@ class uav():
             msg.pose.position.x= x
             msg.pose.position.y= y
             msg.pose.position.z= z
-            q = _gohlketransforms.quaternion_from_euler(0, 0, yaw, 'ryxz')
+            q = _gohlketransforms.quaternion_from_euler(0, 0, math.radians(yaw), 'ryxz')
             msg.pose.orientation.w = q[0]
             msg.pose.orientation.x = q[1]
             msg.pose.orientation.y = q[2]

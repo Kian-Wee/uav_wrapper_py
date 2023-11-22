@@ -2,7 +2,7 @@
 
 import rospy
 import numpy as np
-from uav import uav
+from uav import uav,uav_variables
 from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest
 import math
 from std_msgs.msg import Bool
@@ -20,7 +20,7 @@ rate = 60 #60 times every second
 
 class offboard_node():
 
-    def __init__(self):
+    def __init__(self): 
         print("Initalising Controller")
 
         self.uav = uav(position_topic="nightray/mavros/local_position/pose",setpoint_topic="nightray/mavros/setpoint_position/local",state_topic='nightray/mavros/state')
@@ -45,6 +45,7 @@ class offboard_node():
         self.hover_pos=[-0.5,0,1]
         self.threshold = 0.1 #m
 
+        self.sweep_pos=uav_variables()
         self.beginsweep=0
         self.sweeparr=[]
 
@@ -56,11 +57,10 @@ class offboard_node():
             rospy.logerr("Failed to resume map!")
 
         while not rospy.is_shutdown():
+
             if self.uav.mode=='OFFBOARD':
                 
                 if self.phase == "waiting":
-
-
 
                     if(arming_client.call(arm_cmd).success == True):
                         rospy.loginfo("Vehicle armed")
@@ -86,13 +86,16 @@ class offboard_node():
                     if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
                         rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
                         self.phase="Sweep"
+                        self.sweep_pos.x=self.uav.pos.x
+                        self.sweep_pos.y=self.uav.pos.y
+                        self.sweep_pos.z=self.uav.pos.z
 
                 elif self.phase == "Sweep":
                     rospy.loginfo_throttle(2,"Sweeping")
-                    self.uav.setpoint_yaw(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z,self.slowyaw(angle=720,w=10))
+                    self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
 
                 elif self.phase == "Idle":
-                    if(flight_mode_srv(custom_mode='AUTO.LAND').success == True):
+                    if(flight_mode_srv(custom_mode='AUTO.LAND')):
                         rospy.loginfo_throttle(2,"land success")
                 else:
                     rospy.loginfo_throttle(2,"No command, hovering at current position")
@@ -116,9 +119,8 @@ class offboard_node():
     # w is angular velocity in degrees per second
     # Not inputting an angle(or putting in 720 degrees) defaults it to a auto sweep mode
     # Take note that both the inputs and the outputs are in DEGREES, not radians
-    def slowyaw(self, angle=720, w=10):
+    def slowyaw(self, angle=720, w=20):
         global rate
-        print("rate",rate)
 
         yaw = math.degrees(euler_from_quaternion([self.uav.pos.rx, self.uav.pos.ry, self.uav.pos.rz, self.uav.pos.rw])[2])
 
@@ -139,26 +141,14 @@ class offboard_node():
             self.sweeparr += [self.sweeparr[-1]] * rate # Add 1s to turn to final direction
             self.beginsweep=1
 
-            # print(self.sweeparr)
-        
-        # Should never be invoked, left for debugging
-        elif self.beginsweep==0 and (yaw - angle) == 0:
-            print("Not sweeping as provided angle is the same as current heading")
-            if self.phase=="Sweep":  self.phase="Idle"
-            return angle
-        elif self.beginsweep==0:
-            print("This message should not be printing. It means that the sweep array is not created properly and it is Not Sweeping.")
-            if self.phase=="Sweep":  self.phase="Idle"
-            return angle
         else:
             if self.sweeparr==[]:
-                if self.phase == "Sweep": # In go there, swap the mode change
-                    print("Sweep ended")
-                    self.phase="Idle"
-                return angle
-                # return math.degrees(euler_from_quaternion([self.uav_pos.rx,self.uav_pos.ry,self.uav_pos.rz,self.uav_pos.rw])[2]) # return the current position (else it defaults to 0)
-        
+                print("Sweep ended", yaw)
+                self.phase="Idle"
+                return yaw
+
         desiredyaw=self.sweeparr[0]
+        # print(desiredyaw)
         self.sweeparr.pop(0)
         return desiredyaw
 
