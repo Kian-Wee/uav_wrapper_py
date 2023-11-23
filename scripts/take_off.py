@@ -57,60 +57,62 @@ class offboard_node():
         self.prearm_check_callback)
         self.prearm_check=0
         
-        prearm_reboot_srv = rospy.ServiceProxy('/nightray/mavros/cmd/command', CommandLong)
-        prearm_reboot_srv("{broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0}")
-
-        if(not resume_odom_srv()):
-            rospy.logerr("Failed to resume odom!")
-        if(not resume_srv()):
-            rospy.logerr("Failed to resume map!")
+        self.prearm_reboot_srv = rospy.ServiceProxy('/nightray/mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
 
         while not rospy.is_shutdown():
 
-            if self.uav.mode=='OFFBOARD':
-                
-                if self.phase == "waiting":
+            # Check for init signal
+            if self.init == 1:
 
-                    if(arming_client.call(arm_cmd).success == True):
-                        rospy.loginfo("Vehicle armed")
-                        self.phase="armed"
-                        #Set subsequent setpoints with respect to current position
-                        self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
-                        self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
-                        self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
-                        self.hover_pos[0] = self.hover_pos[0] + self.uav.pos.x
-                        self.hover_pos[1] = self.hover_pos[1] + self.uav.pos.y
-                        self.hover_pos[2] = self.hover_pos[2] + self.uav.pos.z
+                # Wait for drone flags to clear(fusion of pose)
+                if self.prearm_check == 1:
 
-                elif self.phase == "armed":
-                    rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
-                    self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2]) # Publish setpoint at x=0, y=0, z=1
-                    if abs(self.uav.pos.x - self.takeoff_pos[0]) < self.threshold and abs(self.uav.pos.y - self.takeoff_pos[1]) < self.threshold and abs(self.uav.pos.z - self.takeoff_pos[2]) < self.threshold:
-                        rospy.loginfo_once("At take-off setpoint %s, Moving forward",str(self.takeoff_pos))
-                        self.phase="Moving"
+                    # Set to offboard mode
+                    if self.uav.mode=='OFFBOARD':
+                        
+                        # Arm the drone
+                        if self.phase == "waiting":
 
-                elif self.phase == "Moving":
-                    rospy.loginfo_throttle(2,"Moving to setpoint %s",str(self.hover_pos))
-                    self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
-                    if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
-                        rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
-                        self.phase="Sweep"
-                        self.sweep_pos.x=self.uav.pos.x
-                        self.sweep_pos.y=self.uav.pos.y
-                        self.sweep_pos.z=self.uav.pos.z
+                            if(arming_client.call(arm_cmd).success == True):
+                                rospy.loginfo("Vehicle armed")
+                                self.phase="armed"
+                                #Set subsequent setpoints with respect to current position
+                                self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
+                                self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
+                                self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
+                                self.hover_pos[0] = self.hover_pos[0] + self.uav.pos.x
+                                self.hover_pos[1] = self.hover_pos[1] + self.uav.pos.y
+                                self.hover_pos[2] = self.hover_pos[2] + self.uav.pos.z
 
-                elif self.phase == "Sweep":
-                    rospy.loginfo_throttle(2,"Sweeping")
-                    self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
+                        elif self.phase == "armed":
+                            rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
+                            self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2]) # Publish setpoint at x=0, y=0, z=1
+                            if abs(self.uav.pos.x - self.takeoff_pos[0]) < self.threshold and abs(self.uav.pos.y - self.takeoff_pos[1]) < self.threshold and abs(self.uav.pos.z - self.takeoff_pos[2]) < self.threshold:
+                                rospy.loginfo_once("At take-off setpoint %s, Moving forward",str(self.takeoff_pos))
+                                self.phase="Moving"
 
-                elif self.phase == "Idle":
-                    if(flight_mode_srv(custom_mode='AUTO.LAND')):
-                        rospy.loginfo_throttle(2,"land success")
-                else:
-                    rospy.loginfo_throttle(2,"No command, hovering at current position")
-                    self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
-            else:
-                self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) # Pub position callback to allow it to boot into offboard
+                        elif self.phase == "Moving":
+                            rospy.loginfo_throttle(2,"Moving to setpoint %s",str(self.hover_pos))
+                            self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
+                            if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
+                                rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
+                                self.phase="Sweep"
+                                self.sweep_pos.x=self.uav.pos.x
+                                self.sweep_pos.y=self.uav.pos.y
+                                self.sweep_pos.z=self.uav.pos.z
+
+                        elif self.phase == "Sweep":
+                            rospy.loginfo_throttle(2,"Sweeping")
+                            self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
+
+                        elif self.phase == "Idle":
+                            if(flight_mode_srv(custom_mode='AUTO.LAND')):
+                                rospy.loginfo_throttle(2,"land success")
+                        else:
+                            rospy.loginfo_throttle(2,"No command, hovering at current position")
+                            self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+                    else:
+                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) # Pub position callback to allow it to boot into offboard
 
 
             self.rosrate.sleep()
@@ -120,12 +122,19 @@ class offboard_node():
         rospy.signal_shutdown("Node shutting down")
 
     def prearm_check_callback(self,msg):
-        if msg.data == 1: self.prearm_check = 1
+        if msg.data == 1 and self.prearm_check == 0:
+            self.prearm_check = 1
+            self.phase = "waiting"
 
     def start_callback(self, msg):
-        if msg.data == 1 and self.init == 0 and self.prearm_check == 1:
+        if msg.data == 1 and self.init == 0:
             self.init = 1
-            self.phase = "waiting"
+            if(not resume_odom_srv()):
+                rospy.logerr("Failed to resume odom!")
+            if(not resume_srv()):
+                rospy.logerr("Failed to resume map!")
+            self.prearm_reboot_srv(command=246,param1=1)
+
 
     # Slows down sweep to a slower predefined speed, function is made to be non-blocking and returns a slowed down yaw without altering the position
     # w is angular velocity in degrees per second
@@ -160,7 +169,6 @@ class offboard_node():
                 return yaw
 
         desiredyaw=self.sweeparr[0]
-        # print(desiredyaw)
         self.sweeparr.pop(0)
         return desiredyaw
 
