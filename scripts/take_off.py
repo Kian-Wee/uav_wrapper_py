@@ -49,7 +49,7 @@ class offboard_node():
         self.beginsweep=0
         self.sweeparr=[]
 
-        flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
+        self.flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
 
         rospy.Subscriber(
         "/nightray/prearm_check_ready",
@@ -106,7 +106,7 @@ class offboard_node():
                             self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
 
                         elif self.phase == "Idle":
-                            if(flight_mode_srv(custom_mode='AUTO.LAND')):
+                            if(self.flight_mode_srv(custom_mode='AUTO.LAND')):
                                 rospy.loginfo_throttle(2,"land success")
                         else:
                             rospy.loginfo_throttle(2,"No command, hovering at current position")
@@ -126,6 +126,8 @@ class offboard_node():
             rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
             self.prearm_check = 1
             self.phase = "waiting"
+            if(self.flight_mode_srv(custom_mode='OFFBOARD')):
+                rospy.logwarn("set OFFBOARD mode success")
 
     def start_callback(self, msg):
         if msg.data == 1 and self.init == 0:
