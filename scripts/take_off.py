@@ -3,7 +3,7 @@
 import rospy
 import numpy as np
 from uav import uav,uav_variables
-from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest
+from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest, CommandLong
 import math
 from std_msgs.msg import Bool
 from std_srvs.srv import Empty
@@ -50,6 +50,15 @@ class offboard_node():
         self.sweeparr=[]
 
         flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
+
+        rospy.Subscriber(
+        "/nightray/prearm_check_ready",
+        Bool,
+        self.prearm_check_callback)
+        self.prearm_check=0
+        
+        prearm_reboot_srv = rospy.ServiceProxy('/nightray/mavros/cmd/command', CommandLong)
+        prearm_reboot_srv("{broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0}")
 
         if(not resume_odom_srv()):
             rospy.logerr("Failed to resume odom!")
@@ -110,8 +119,11 @@ class offboard_node():
         print("Killing node")
         rospy.signal_shutdown("Node shutting down")
 
+    def prearm_check_callback(self,msg):
+        if msg.data == 1: self.prearm_check = 1
+
     def start_callback(self, msg):
-        if msg.data == 1 and self.init == 0:
+        if msg.data == 1 and self.init == 0 and self.prearm_check == 1:
             self.init = 1
             self.phase = "waiting"
 
