@@ -66,7 +66,7 @@ class offboard_node():
 
                 # Wait for drone flags to clear(fusion of pose)
                 if self.prearm_check == 1:
-
+                    # print("Come to me geo daddy")
                     # Set to offboard mode
                     if self.uav.mode=='OFFBOARD':
                         
@@ -122,19 +122,20 @@ class offboard_node():
         rospy.signal_shutdown("Node shutting down")
 
     def prearm_check_callback(self,msg):
-        if msg.data == 1 and self.prearm_check == 0:
+        if msg.data == 1 and self.prearm_check == 0 and self.init == 1:
+            rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
             self.prearm_check = 1
             self.phase = "waiting"
 
     def start_callback(self, msg):
         if msg.data == 1 and self.init == 0:
+            rospy.loginfo("Mapping takeoff start signal recieved")
             self.init = 1
             if(not resume_odom_srv()):
                 rospy.logerr("Failed to resume odom!")
             if(not resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
-
 
     # Slows down sweep to a slower predefined speed, function is made to be non-blocking and returns a slowed down yaw without altering the position
     # w is angular velocity in degrees per second
