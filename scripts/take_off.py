@@ -8,6 +8,7 @@ import math
 from std_msgs.msg import Bool
 from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion
+import time
 
 resume_odom_srv = rospy.ServiceProxy('/nightray/resume_odom', Empty) # Resume odometry
 resume_srv = rospy.ServiceProxy('/nightray/resume', Empty) # Resume mapping
@@ -126,6 +127,7 @@ class offboard_node():
             rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
             self.prearm_check = 1
             self.phase = "waiting"
+            time.sleep(5)
             if(self.flight_mode_srv(custom_mode='OFFBOARD')):
                 rospy.logwarn("set OFFBOARD mode success")
 
