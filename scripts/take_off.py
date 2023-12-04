@@ -162,6 +162,7 @@ class offboard_node():
             rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
             self.prearm_check = 2
             self.phase = "waiting"
+            time.sleep(5)
             if(self.flight_mode_srv(custom_mode='OFFBOARD')):
                 rospy.logwarn("set OFFBOARD mode success")
 
