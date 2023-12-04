@@ -2,9 +2,12 @@
 
 import rospy
 import numpy as np
+import tf
+import math
+from numpy import clip, average
+from geometry_msgs.msg import Twist, PoseStamped
 from uav import uav,uav_variables
 from mavros_msgs.srv import SetMode, CommandBool, CommandBoolRequest, CommandLong
-import math
 from std_msgs.msg import Bool
 from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion
@@ -30,10 +33,14 @@ class offboard_node():
 
         self.phase = "uninit"
 
+        self.takeoff_pos=[0,0,1]
+        self.hover_pos=[-0.5,0,1]
+        self.threshold = 0.1 #m
+
         rospy.Subscriber(
         "/mapping_takeoff",
         Bool,
-        self.start_callback)
+        self.start2_callback)
         self.init = 0
 
         rospy.wait_for_service("nightray/mavros/cmd/arming")
@@ -41,15 +48,13 @@ class offboard_node():
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        self.takeoff_pos=[0,0,1]
-        self.hover_pos=[-0.5,0,1]
-        self.threshold = 0.1 #m
-
         self.sweep_pos=uav_variables()
         self.beginsweep=0
         self.sweeparr=[]
 
         self.flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
+
+        rospy.Subscriber("/multijackal_03/takeoff", Bool, self.start1_callback)
 
         rospy.Subscriber(
         "/nightray/prearm_check_ready",
@@ -61,12 +66,17 @@ class offboard_node():
 
         while not rospy.is_shutdown():
 
-            # Check for init signal
+
+            # Check for init signal for second phase
             if self.init == 1:
+                pass
+
+            # Check for init signal for second phase
+            elif self.init == 2:
 
                 # Wait for drone flags to clear(fusion of pose)
-                if self.prearm_check == 1:
-                    # print("Come to me geo daddy")
+                if self.prearm_check == 2:
+
                     # Set to offboard mode
                     if self.uav.mode=='OFFBOARD':
                         
@@ -121,15 +131,11 @@ class offboard_node():
         print("Killing node")
         rospy.signal_shutdown("Node shutting down")
 
-    def prearm_check_callback(self,msg):
-        if msg.data == 1 and self.prearm_check == 0 and self.init == 1:
-            rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
-            self.prearm_check = 1
-            self.phase = "waiting"
-            if(self.flight_mode_srv(custom_mode='OFFBOARD')):
-                rospy.logwarn("set OFFBOARD mode success")
+    def start1_callback(self, msg):
 
-    def start_callback(self, msg):
+        if msg.data is True and self.prearm_check == 0 and self.init == 0:
+            self.init = 1
+
         if msg.data == 1 and self.init == 0:
             rospy.loginfo("Mapping takeoff start signal recieved")
             self.init = 1
@@ -138,6 +144,27 @@ class offboard_node():
             if(not resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
+
+
+    def start2_callback(self, msg):
+        if msg.data == 1 and self.init == 0:
+            rospy.loginfo("Mapping takeoff start signal recieved")
+            self.init = 1
+            if(not resume_odom_srv()):
+                rospy.logerr("Failed to resume odom!")
+            if(not resume_srv()):
+                rospy.logerr("Failed to resume map!")
+            self.prearm_reboot_srv(command=246,param1=1)
+
+    def prearm_check_callback(self,msg):
+        if msg.data == 1 and self.prearm_check == 1 and self.init == 1: # Probably dont need to check for init(state)
+            rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
+            self.prearm_check = 2
+            self.phase = "waiting"
+            if(self.flight_mode_srv(custom_mode='OFFBOARD')):
+                rospy.logwarn("set OFFBOARD mode success")
+
+
 
     # Slows down sweep to a slower predefined speed, function is made to be non-blocking and returns a slowed down yaw without altering the position
     # w is angular velocity in degrees per second
