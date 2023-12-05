@@ -13,12 +13,6 @@ from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion
 import time
 
-resume_odom_srv = rospy.ServiceProxy('/nightray/resume_odom', Empty) # Resume odometry
-resume_srv = rospy.ServiceProxy('/nightray/resume', Empty) # Resume mapping
-
-#take off and yaw test
-# Just wait for 2 signals, arm, takeoff, spin 3 times and land
-
 # Update rate
 rate = 60 #60 times every second
 
@@ -34,56 +28,136 @@ class offboard_node():
 
         self.phase = "uninit"
 
-        self.takeoff_pos=[0,0,1]
-        self.hover_pos=[-0.5,0,1]
-        self.threshold = 0.1 #m
 
-        rospy.Subscriber(
-        "/mapping_takeoff",
-        Bool,
-        self.start2_callback)
-        self.init = 0
-
+        # Mavros
         rospy.wait_for_service("nightray/mavros/cmd/arming")
         arming_client = rospy.ServiceProxy("nightray/mavros/cmd/arming", CommandBool)
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        self.sweep_pos=uav_variables()
-        self.beginsweep=0
-        self.sweeparr=[]
-
         self.flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
 
-        rospy.Subscriber("/multijackal_03/takeoff", Bool, self.start1_callback)
+        self.resume_odom_srv = rospy.ServiceProxy('/nightray/resume_odom', Empty) # Resume odometry
+        self.reset_odom_srv = rospy.ServiceProxy('reset_odom', Empty)
+        self.resume_srv = rospy.ServiceProxy('/nightray/resume', Empty) # Resume mapping
+        self.reset_srv = rospy.ServiceProxy('reset', Empty)
 
         rospy.Subscriber(
         "/nightray/prearm_check_ready",
         Bool,
         self.prearm_check_callback)
         self.prearm_check=0
+
+
+        # Phase 1
+        self.forward_p = rospy.get_param("forward_p", 0.5)
+        #forward_d = rospy.get_param("forward_d")
+        self.horizontal_p = rospy.get_param("horizontal_p", 0.75)
+        self.vertical_p = rospy.get_param("vertical_p", 0.5)
+        self.yaw_p = rospy.get_param("yaw_p", 1)
+        self.forward_max = rospy.get_param("forward_max", 0.125)
+        self.horizontal_max = rospy.get_param("horizontal_max", 0.125)
+        self.vertical_max = rospy.get_param("vertical_max", 0.25)
+        self.yaw_max = rospy.get_param("yaw_max", 0.25)
+        self.takeoff_height = rospy.get_param("takeoff_height", 0.7)
+
+        self.forward_error_history = []
+        self.horizontal_error_history = []
+        self.vertical_error_history = []
+        self.yaw_error_history = []
+
+        self.landing_score_x = 0
+        self.landing_score_y = 0
+
+        self.postarm_counter = 0
+
+        rospy.Subscriber("/multijackal_03/takeoff", Bool, self.start1_callback)
+        self.target_listener = tf.TransformListener()
+
+        self.drone_vel = rospy.Publisher('mavros/setpoint_velocity/cmd_vel_unstamped', Twist,queue_size=1)
+        self.output_velocity = Twist()
+        # self.drone_pos = rospy.Publisher('mavros/setpoint_position/local', PoseStamped,queue_size=1)
+        # self.output_position = PoseStamped()
+
+
+        # Phase 2
+        self.takeoff_pos=[0,0,1]
+        self.hover_pos=[-0.5,0,1]
+        self.threshold = 0.1 #m
+
+        self.sweep_pos=uav_variables()
+        self.beginsweep=0
+        self.sweeparr=[]
+
+        rospy.Subscriber(
+        "/mapping_takeoff",
+        Bool,
+        self.start2_callback)
+        self.init = 0
         
         self.prearm_reboot_srv = rospy.ServiceProxy('/nightray/mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
 
+
         while not rospy.is_shutdown():
+
+            # Land UAV once mission/phase is over when phase is set to land
+            if self.phase == "land":
+                if(self.flight_mode_srv(custom_mode='AUTO.LAND')):
+                    rospy.loginfo_throttle(2,"land success")
 
 
             # Check for init signal for second phase
-            if self.init == 1:
-                pass
+            elif self.init == 1:
+                rospy.logwarn_once("Starting first phase of deployment")
+
+                # Wait for drone flags to clear(fusion of pose)
+                if self.prearm_check == 1:
+                    
+                    # Checks if its in offboard mode, the second part should technically not be needed
+                    # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
+                    if self.check_offboard() == 1 and self.uav.mode=='OFFBOARD':
+
+                        # Arm the drone
+                        if self.phase == "arming":
+                            if(arming_client.call(arm_cmd).success == True):
+                                rospy.loginfo("Vehicle armed")
+                                self.phase="armed"
+                                #Set subsequent setpoints with respect to current position
+                                self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
+                                self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
+                                self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
+                                self.hover_pos[0] = self.uav.pos.x
+                                self.hover_pos[1] = self.uav.pos.y
+
+                                # Assume it is using external ground truth for localisation in this case
+                                if self.uav.pos.z > 0.1:
+                                    self.hover_pos[2] = self.takeoff_height
+                                # Assume it is using onboard vio in this case
+                                else:
+                                    self.hover_pos[2] = self.uav.pos.z + self.takeoff_height
+
+                        elif self.phase == "armed":
+                            rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
+                            self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
+                            if self.postarm_counter > 50:
+                                self.phase = "alignment"
+                            else:
+                                self.postarm_counter += 1
+
 
             # Check for init signal for second phase
             elif self.init == 2:
+                rospy.logwarn_once("Starting second phase of deployment")
 
                 # Wait for drone flags to clear(fusion of pose)
-                if self.prearm_check == 2:
+                if self.prearm_check == 1:
 
-                    # Set to offboard mode
-                    if self.uav.mode=='OFFBOARD':
+                    # Checks if its in offboard mode, the second part should technically not be needed
+                    # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
+                    if self.check_offboard() == 1 and self.uav.mode=='OFFBOARD':
                         
                         # Arm the drone
-                        if self.phase == "waiting":
-
+                        if self.phase == "arming":
                             if(arming_client.call(arm_cmd).success == True):
                                 rospy.loginfo("Vehicle armed")
                                 self.phase="armed"
@@ -116,14 +190,13 @@ class offboard_node():
                             rospy.loginfo_throttle(2,"Sweeping")
                             self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
 
-                        elif self.phase == "Idle":
-                            if(self.flight_mode_srv(custom_mode='AUTO.LAND')):
-                                rospy.loginfo_throttle(2,"land success")
                         else:
                             rospy.loginfo_throttle(2,"No command, hovering at current position")
                             self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+
+                    # Pub position callback to allow it to boot into offboard
                     else:
-                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) # Pub position callback to allow it to boot into offboard
+                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
 
 
             self.rosrate.sleep()
@@ -133,38 +206,44 @@ class offboard_node():
         rospy.signal_shutdown("Node shutting down")
 
     def start1_callback(self, msg):
-
-        if msg.data is True and self.prearm_check == 0 and self.init == 0:
-            self.init = 1
-
         if msg.data == 1 and self.init == 0:
-            rospy.loginfo("Mapping takeoff start signal recieved")
-            self.init = 1
-            if(not resume_odom_srv()):
+            rospy.loginfo("Mapping takeoff start signal recieved, starting first phase")
+            if not self.reset_odom_srv():
+                rospy.logerr("Failed to reset odom!")
+            if not self.reset_srv():
+                rospy.logerr("Failed to reset map!")
+            if(not self.resume_odom_srv()):
                 rospy.logerr("Failed to resume odom!")
-            if(not resume_srv()):
+            if(not self.resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
 
+            self.init = 1
 
     def start2_callback(self, msg):
-        if msg.data == 1 and self.init == 0:
-            rospy.loginfo("Mapping takeoff start signal recieved")
-            self.init = 1
-            if(not resume_odom_srv()):
+        if msg.data == 1 and self.init == 1:
+            rospy.loginfo("Mapping takeoff start signal recieved, resuming second phase")
+            if(not self.resume_odom_srv()):
                 rospy.logerr("Failed to resume odom!")
-            if(not resume_srv()):
+            if(not self.resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
 
+            self.init = 2
+
     def prearm_check_callback(self,msg):
-        if msg.data == 1 and self.prearm_check == 1 and self.init == 1: # Probably dont need to check for init(state)
+        self.prearm_check = msg.data
+
+    # When the function is called it tries to set offboard if the prearm check passes
+    def check_offboard(self):
+        if self.prearm_check == 1:
             rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
-            self.prearm_check = 2
-            self.phase = "waiting"
-            time.sleep(5)
+            self.phase = "arming"
+            # time.sleep(5)
             if(self.flight_mode_srv(custom_mode='OFFBOARD')):
                 rospy.logwarn("set OFFBOARD mode success")
+                return 1 # Already in offboard
+        return 0
 
 
 
@@ -197,7 +276,7 @@ class offboard_node():
         else:
             if self.sweeparr==[]:
                 print("Sweep ended", yaw)
-                self.phase="Idle"
+                self.phase="land"
                 return yaw
 
         desiredyaw=self.sweeparr[0]
