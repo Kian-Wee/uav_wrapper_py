@@ -196,6 +196,10 @@ class offboard_node():
                                 rospy.logwarn("Lost Aruco")
 
 
+                        elif self.phase == "landing":
+                            if(self.flight_mode_srv(custom_mode='AUTO.LAND')): # Currently not sending any offboard setpoint, attempting to just force land
+                                rospy.loginfo("land success, waiting for disarm")
+                                self.phase = "landed"
                         else:
                             rospy.loginfo_throttle(2,"No command, hovering at current position")
                             self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
