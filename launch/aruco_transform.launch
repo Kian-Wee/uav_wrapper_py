@@ -18,7 +18,7 @@
 
         <arg name="drone_frame" default="" /> <!-- blank to use camera frame -->
         
-        <node pkg="uav_wrapper_py" type="aruco_pcontrol_transform.py" name="aruco_pcontrol" output="screen">
+        <node pkg="uav_wrapper_py" type="take_off.py" name="aruco_pcontrol" output="screen">
             <param name="x_p_gain" value="$(arg x_p_gain)" />
             <param name="x_pos_goal" value="$(arg x_pos_goal)" />
             <param name="y_p_gain" value="$(arg y_p_gain)" />

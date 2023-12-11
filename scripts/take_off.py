@@ -21,7 +21,7 @@ class offboard_node():
     def __init__(self): 
         print("Initalising Controller")
 
-        self.uav = uav(position_topic="nightray/mavros/local_position/pose",setpoint_topic="nightray/mavros/setpoint_position/local",state_topic='nightray/mavros/state')
+        self.uav = uav(position_topic="mavros/local_position/pose",setpoint_topic="mavros/setpoint_position/local",state_topic='mavros/state')
 
         self.rosrate=rospy.Rate(rate)
         rospy.on_shutdown(self.quit)
@@ -30,20 +30,20 @@ class offboard_node():
 
 
         # Mavros
-        rospy.wait_for_service("nightray/mavros/cmd/arming")
-        arming_client = rospy.ServiceProxy("nightray/mavros/cmd/arming", CommandBool)
+        rospy.wait_for_service("mavros/cmd/arming")
+        arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        self.flight_mode_srv = rospy.ServiceProxy('nightray/mavros/set_mode', SetMode)
+        self.flight_mode_srv = rospy.ServiceProxy('mavros/set_mode', SetMode)
 
-        self.resume_odom_srv = rospy.ServiceProxy('/nightray/resume_odom', Empty) # Resume odometry
+        self.resume_odom_srv = rospy.ServiceProxy('resume_odom', Empty) # Resume odometry
         self.reset_odom_srv = rospy.ServiceProxy('reset_odom', Empty)
-        self.resume_srv = rospy.ServiceProxy('/nightray/resume', Empty) # Resume mapping
+        self.resume_srv = rospy.ServiceProxy('resume', Empty) # Resume mapping
         self.reset_srv = rospy.ServiceProxy('reset', Empty)
 
         rospy.Subscriber(
-        "/nightray/prearm_check_ready",
+        "prearm_check_ready",
         Bool,
         self.prearm_check_callback)
         self.prearm_check=0
@@ -90,12 +90,12 @@ class offboard_node():
         self.sweeparr=[]
 
         rospy.Subscriber(
-        "/mapping_takeoff",
+        "/multijackal_03/mapping_takeoff",
         Bool,
         self.start2_callback)
         self.init = 0
         
-        self.prearm_reboot_srv = rospy.ServiceProxy('/nightray/mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
+        self.prearm_reboot_srv = rospy.ServiceProxy('mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
 
 
         while not rospy.is_shutdown():
@@ -189,7 +189,7 @@ class offboard_node():
                                     rospy.loginfo("Publishing {0:.2f} {1:.2f} {2:.2f} {3:.2f}".format(self.output_velocity.linear.x,self.output_velocity.linear.y,self.output_velocity.linear.z, self.output_velocity.angular.z))
                                     self.drone_vel.publish(self.output_velocity)
                                 else:
-                                    rospy.loginfo("aligned, entering landing phase")
+                                    rospy.loginfo_throttle(2,"aligned, entering landing phase")
                                     self.phase = "landing"
 
                             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
@@ -198,7 +198,7 @@ class offboard_node():
 
                         elif self.phase == "landing":
                             if(self.flight_mode_srv(custom_mode='AUTO.LAND')): # Currently not sending any offboard setpoint, attempting to just force land
-                                rospy.loginfo("land success, waiting for disarm")
+                                rospy.loginfo_throttle(2,"land success, waiting for disarm")
                                 self.phase = "landed"
                         else:
                             rospy.loginfo_throttle(2,"No command, hovering at current position")
