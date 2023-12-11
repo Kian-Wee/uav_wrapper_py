@@ -78,6 +78,7 @@ class offboard_node():
         self.output_velocity = Twist()
         # self.drone_pos = rospy.Publisher('mavros/setpoint_position/local', PoseStamped,queue_size=1)
         # self.output_position = PoseStamped()
+        self.offboard1_flag = 0
 
 
         # Phase 2
@@ -93,8 +94,9 @@ class offboard_node():
         "/multijackal_03/mapping_takeoff",
         Bool,
         self.start2_callback)
+        self.offboard2_flag = 0
+
         self.init = 0
-        
         self.prearm_reboot_srv = rospy.ServiceProxy('mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
 
 
@@ -109,159 +111,161 @@ class offboard_node():
             # Check for init signal for second phase
             elif self.init == 1:
                 rospy.logwarn_once("Starting first phase of deployment")
+                
+                if self.offboard1_flag == 0:
+                    self.offboard1_flag = self.check_offboard() # Keeps calling function which attempts to set it into offboard
 
-                # Wait for drone flags to clear(fusion of pose)
-                if self.prearm_check == 1:
-                    
-                    # Checks if its in offboard mode, the second part should technically not be needed
-                    # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
-                    if self.check_offboard() == 1 and self.uav.mode=='OFFBOARD':
+                # Checks if its in offboard mode, the second part should technically not be needed
+                # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
+                elif self.uav.mode=='OFFBOARD':
+                    # Arm the drone
+                    if self.phase == "arming":
+                        if(arming_client.call(arm_cmd).success == True):
+                            rospy.loginfo("Vehicle armed")
+                            self.phase="armed"
+                            #Set subsequent setpoints with respect to current position
+                            self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
+                            self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
+                            self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
+                            self.hover_pos[0] = self.uav.pos.x
+                            self.hover_pos[1] = self.uav.pos.y
 
-                        # Arm the drone
-                        if self.phase == "arming":
-                            if(arming_client.call(arm_cmd).success == True):
-                                rospy.loginfo("Vehicle armed")
-                                self.phase="armed"
-                                #Set subsequent setpoints with respect to current position
-                                self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
-                                self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
-                                self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
-                                self.hover_pos[0] = self.uav.pos.x
-                                self.hover_pos[1] = self.uav.pos.y
-
-                                # Assume it is using external ground truth for localisation in this case
-                                if self.uav.pos.z > 0.1:
-                                    self.hover_pos[2] = self.takeoff_height
-                                # Assume it is using onboard vio in this case
-                                else:
-                                    self.hover_pos[2] = self.uav.pos.z + self.takeoff_height
-
-                        elif self.phase == "armed":
-                            rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
-                            self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
-                            if self.postarm_counter > rate * 3:
-                                self.phase = "alignment"
+                            # Assume it is using external ground truth for localisation in this case
+                            if self.uav.pos.z > 0.1:
+                                self.hover_pos[2] = self.takeoff_height
+                            # Assume it is using onboard vio in this case
                             else:
-                                self.postarm_counter += 1
-                                        
-                        elif self.phase == "alignment":
-                            try:
-                                if landing_score_y < 30 and landing_score_x < 30: 
-                                    ((yaw_error_forward,yaw_error_horizontal,vertical_error),_) = self.target_listener.lookupTransform('/multijackal_03/base_link','marker_5', rospy.Time(0))
-                                    ((forward_error,horizontal_error,_),_) = self.target_listener.lookupTransform('/multijackal_03/base_link','target', rospy.Time(0))
-                                    
-                                    self.forward_error_history.insert(0,forward_error)
-                                    self.horizontal_error_history.insert(0,horizontal_error)
-                                    self.vertical_error_history.insert(0,vertical_error)
-                                    self.yaw_error_history.insert(0, math.atan2(yaw_error_horizontal,yaw_error_forward))
-                                    
-                                    if len(self.forward_error_history) > 5:
-                                        self.forward_error_history.pop(5)
-                                        self.horizontal_error_history.pop(5)
-                                        self.vertical_error_history.pop(5)
-                                        self.yaw_error_history.pop(5)
+                                self.hover_pos[2] = self.uav.pos.z + self.takeoff_height
 
-                                    forward_error = average(self.forward_error_history)
-                                    horizontal_error = average(self.horizontal_error_history)
-                                    vertical_error = average(self.vertical_error_history)
-                                    yaw_error = average(self.yaw_error_history)
-                                    forward_output = clip(-(forward_error * self.forward_p), -self.forward_max, self.forward_max)
-                                    horizontal_output = clip(-(horizontal_error * self.horizontal_p), -self.horizontal_max, self.horizontal_max)
-                                    vertical_output = clip((vertical_error * self.vertical_p), -self.vertical_max, self.vertical_max)
-                                    yaw_output = clip((yaw_error * self.yaw_p), -self.yaw_max, self.yaw_max)
-                                    
-                                    if abs(forward_error) < 0.05:
-                                        self.output_velocity.linear.x = 0
-                                        landing_score_x += 1
-                                    else:
-                                        self.output_velocity.linear.x = forward_output
-                                        landing_score_x = 0
-
-                                    if abs(horizontal_error) < 0.05:
-                                        self.output_velocity.linear.y = 0
-                                        landing_score_y += 1
-                                    else:
-                                        self.output_velocity.linear.y = horizontal_output
-                                        landing_score_y = 0
-                                    self.output_velocity.angular.z = yaw_output
-                                    self.output_velocity.linear.z = vertical_output
-
-                                    rospy.loginfo("Publishing {0:.2f} {1:.2f} {2:.2f} {3:.2f}".format(self.output_velocity.linear.x,self.output_velocity.linear.y,self.output_velocity.linear.z, self.output_velocity.angular.z))
-                                    self.drone_vel.publish(self.output_velocity)
-                                else:
-                                    rospy.loginfo_throttle(2,"aligned, entering landing phase")
-                                    self.phase = "landing"
-
-                            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                                rospy.logwarn("Lost Aruco")
-
-
-                        elif self.phase == "landing":
-                            if(self.flight_mode_srv(custom_mode='AUTO.LAND')): # Currently not sending any offboard setpoint, attempting to just force land
-                                rospy.loginfo_throttle(2,"land success, waiting for disarm")
-                                self.phase = "landed"
+                    elif self.phase == "armed":
+                        rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
+                        self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
+                        if self.postarm_counter > rate * 3:
+                            rospy.loginfo_throttle(1,"aligning")
+                            self.phase = "alignment"
                         else:
-                            rospy.loginfo_throttle(2,"No command, hovering at current position")
-                            self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+                            self.postarm_counter += 1
+                                    
+                    elif self.phase == "alignment":
+                        try:
+                            if self.landing_score_y < 30 and self.landing_score_x < 30: 
+                                ((yaw_error_forward,yaw_error_horizontal,vertical_error),_) = self.target_listener.lookupTransform('/multijackal_03/base_link','marker_5', rospy.Time(0))
+                                ((forward_error,horizontal_error,_),_) = self.target_listener.lookupTransform('/multijackal_03/base_link','target', rospy.Time(0))
+                                
+                                self.forward_error_history.insert(0,forward_error)
+                                self.horizontal_error_history.insert(0,horizontal_error)
+                                self.vertical_error_history.insert(0,vertical_error)
+                                self.yaw_error_history.insert(0, math.atan2(yaw_error_horizontal,yaw_error_forward))
+                                
+                                if len(self.forward_error_history) > 5:
+                                    self.forward_error_history.pop(5)
+                                    self.horizontal_error_history.pop(5)
+                                    self.vertical_error_history.pop(5)
+                                    self.yaw_error_history.pop(5)
 
+                                forward_error = average(self.forward_error_history)
+                                horizontal_error = average(self.horizontal_error_history)
+                                vertical_error = average(self.vertical_error_history)
+                                yaw_error = average(self.yaw_error_history)
+                                forward_output = clip(-(forward_error * self.forward_p), -self.forward_max, self.forward_max)
+                                horizontal_output = clip(-(horizontal_error * self.horizontal_p), -self.horizontal_max, self.horizontal_max)
+                                vertical_output = clip((vertical_error * self.vertical_p), -self.vertical_max, self.vertical_max)
+                                yaw_output = clip((yaw_error * self.yaw_p), -self.yaw_max, self.yaw_max)
+                                
+                                if abs(forward_error) < 0.05:
+                                    self.output_velocity.linear.x = 0
+                                    landing_score_x += 1
+                                else:
+                                    self.output_velocity.linear.x = forward_output
+                                    landing_score_x = 0
+
+                                if abs(horizontal_error) < 0.05:
+                                    self.output_velocity.linear.y = 0
+                                    landing_score_y += 1
+                                else:
+                                    self.output_velocity.linear.y = horizontal_output
+                                    landing_score_y = 0
+                                self.output_velocity.angular.z = yaw_output
+                                self.output_velocity.linear.z = vertical_output
+
+                                rospy.loginfo("Publishing {0:.2f} {1:.2f} {2:.2f} {3:.2f}".format(self.output_velocity.linear.x,self.output_velocity.linear.y,self.output_velocity.linear.z, self.output_velocity.angular.z))
+                                self.drone_vel.publish(self.output_velocity)
+                            else:
+                                rospy.loginfo_throttle(2,"aligned, entering landing phase")
+                                self.phase = "landing"
+
+                        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                            rospy.logwarn("Lost Aruco")
+
+                    elif self.phase == "landing":
+                        if(self.flight_mode_srv(custom_mode='AUTO.LAND')): # Currently not sending any offboard setpoint, attempting to just force land
+                            rospy.loginfo_throttle(2,"land success, waiting for disarm")
+                            self.phase = "uninit"
                     
-                    # Pub position callback to allow it to boot into offboard
                     else:
-                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
+                        rospy.loginfo_throttle(2,"No command, hovering at current position")
+                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+
+                # Pub position callback to allow it to return to offboard
+                else:
+                    rospy.loginfo_throttle(2,"Waiting for OFFBOARD")
+
+                    self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
 
 
             # Check for init signal for second phase
             elif self.init == 2:
                 rospy.logwarn_once("Starting second phase of deployment")
 
-                # Wait for drone flags to clear(fusion of pose)
-                if self.prearm_check == 1:
+                if self.offboard2_flag == 0:
+                    self.offboard2_flag = self.check_offboard() # Keeps calling function which attempts to set it into offboard
 
-                    # Checks if its in offboard mode, the second part should technically not be needed
-                    # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
-                    if self.check_offboard() == 1 and self.uav.mode=='OFFBOARD':
-                        
-                        # Arm the drone
-                        if self.phase == "arming":
-                            if(arming_client.call(arm_cmd).success == True):
-                                rospy.loginfo("Vehicle armed")
-                                self.phase="armed"
-                                #Set subsequent setpoints with respect to current position
-                                self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
-                                self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
-                                self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
-                                self.hover_pos[0] = self.hover_pos[0] + self.uav.pos.x
-                                self.hover_pos[1] = self.hover_pos[1] + self.uav.pos.y
-                                self.hover_pos[2] = self.hover_pos[2] + self.uav.pos.z
+                # Checks if its in offboard mode, the second part should technically not be needed
+                # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
+                elif self.uav.mode=='OFFBOARD':
+                    
+                    # Arm the drone
+                    if self.phase == "arming":
+                        if(arming_client.call(arm_cmd).success == True):
+                            rospy.loginfo("Vehicle armed")
+                            self.phase="armed"
+                            #Set subsequent setpoints with respect to current position
+                            self.takeoff_pos[0] = self.takeoff_pos[0] + self.uav.pos.x
+                            self.takeoff_pos[1] = self.takeoff_pos[1] + self.uav.pos.y
+                            self.takeoff_pos[2] = self.takeoff_pos[2] + self.uav.pos.z
+                            self.hover_pos[0] = self.hover_pos[0] + self.uav.pos.x
+                            self.hover_pos[1] = self.hover_pos[1] + self.uav.pos.y
+                            self.hover_pos[2] = self.hover_pos[2] + self.uav.pos.z
 
-                        elif self.phase == "armed":
-                            rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
-                            self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2]) # Publish setpoint at x=0, y=0, z=1
-                            if abs(self.uav.pos.x - self.takeoff_pos[0]) < self.threshold and abs(self.uav.pos.y - self.takeoff_pos[1]) < self.threshold and abs(self.uav.pos.z - self.takeoff_pos[2]) < self.threshold:
-                                rospy.loginfo_once("At take-off setpoint %s, Moving forward",str(self.takeoff_pos))
-                                self.phase="Moving"
+                    elif self.phase == "armed":
+                        rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
+                        self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2]) # Publish setpoint at x=0, y=0, z=1
+                        if abs(self.uav.pos.x - self.takeoff_pos[0]) < self.threshold and abs(self.uav.pos.y - self.takeoff_pos[1]) < self.threshold and abs(self.uav.pos.z - self.takeoff_pos[2]) < self.threshold:
+                            rospy.loginfo_once("At take-off setpoint %s, Moving forward",str(self.takeoff_pos))
+                            self.phase="Moving"
 
-                        elif self.phase == "Moving":
-                            rospy.loginfo_throttle(2,"Moving to setpoint %s",str(self.hover_pos))
-                            self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
-                            if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
-                                rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
-                                self.phase="Sweep"
-                                self.sweep_pos.x=self.uav.pos.x
-                                self.sweep_pos.y=self.uav.pos.y
-                                self.sweep_pos.z=self.uav.pos.z
+                    elif self.phase == "Moving":
+                        rospy.loginfo_throttle(2,"Moving to setpoint %s",str(self.hover_pos))
+                        self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
+                        if abs(self.uav.pos.x - self.hover_pos[0]) < self.threshold and abs(self.uav.pos.y - self.hover_pos[1]) < self.threshold and abs(self.uav.pos.z - self.hover_pos[2]) < self.threshold:
+                            rospy.loginfo_once("At hover setpoint %s, Sweeping",str(self.takeoff_pos))
+                            self.phase="Sweep"
+                            self.sweep_pos.x=self.uav.pos.x
+                            self.sweep_pos.y=self.uav.pos.y
+                            self.sweep_pos.z=self.uav.pos.z
 
-                        elif self.phase == "Sweep":
-                            rospy.loginfo_throttle(2,"Sweeping")
-                            self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
+                    elif self.phase == "Sweep":
+                        rospy.loginfo_throttle(2,"Sweeping")
+                        self.uav.setpoint_yaw(self.sweep_pos.x,self.sweep_pos.y,self.sweep_pos.z,self.slowyaw())
 
-                        else:
-                            rospy.loginfo_throttle(2,"No command, hovering at current position")
-                            self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
-
-                    # Pub position callback to allow it to boot into offboard
                     else:
-                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
+                        rospy.loginfo_throttle(2,"No command, hovering at current position")
+                        self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+
+                # Pub position callback to allow it to return to offboard
+                else:
+                    rospy.loginfo_throttle(2,"Waiting for OFFBOARD")
+                    self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
 
 
             self.rosrate.sleep()
@@ -282,7 +286,7 @@ class offboard_node():
             if(not self.resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
-
+            time.sleep(3)
             self.init = 1
 
     def start2_callback(self, msg):
@@ -293,7 +297,7 @@ class offboard_node():
             if(not self.resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
-
+            time.sleep(3)
             self.init = 2
 
     def prearm_check_callback(self,msg):
@@ -301,13 +305,16 @@ class offboard_node():
 
     # When the function is called it tries to set offboard if the prearm check passes
     def check_offboard(self):
+        # Wait for drone flags to clear(fusion of pose)
         if self.prearm_check == 1:
-            rospy.loginfo("Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
-            self.phase = "arming"
-            # time.sleep(5)
-            if(self.flight_mode_srv(custom_mode='OFFBOARD')):
-                rospy.logwarn("set OFFBOARD mode success")
-                return 1 # Already in offboard
+            rospy.loginfo_throttle(2,"Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
+           
+            if self.uav.mode !='OFFBOARD':
+                if(self.flight_mode_srv(custom_mode='OFFBOARD')):
+                    rospy.logwarn_throttle(2,"set OFFBOARD mode success")
+                    self.phase = "arming"
+                    return 1 # Already in offboard
+
         return 0
 
 

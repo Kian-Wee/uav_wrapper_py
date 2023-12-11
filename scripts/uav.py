@@ -18,8 +18,8 @@ _egm96 = GeoidPGM('/usr/share/GeographicLib/geoids/egm96-5.pgm', kind=-3)
 class uav():
 
     # /mavros/local_position/pose for local indoor position; /mavros/global_position/local for local outdoor position with GPS
-    def __init__(self,position_topic="/mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="/mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
-                 name="",tf_world_frame="/world",tf_drone_frame="/drone",survey_array=[],global_survey_array=[],survey_array_cont=[],state_topic='/mavros/state'):
+    def __init__(self,position_topic="mavros/local_position/pose",position_topic_type=PoseStamped,setpoint_topic="mavros/setpoint_position/local",setpoint_topic_type=PoseStamped,
+                 name="",tf_world_frame="world",tf_drone_frame="drone",survey_array=[],global_survey_array=[],survey_array_cont=[],state_topic='mavros/state'):
         self.position_topic=name+position_topic
         self.setpoint_topic=name+setpoint_topic
         self.tf_world_frame=name+tf_world_frame
@@ -40,10 +40,10 @@ class uav():
             self.position_listener_callback)
         
         self.global_pos=uav_variables()
-        rospy.Subscriber("/mavros/global_position/global",NavSatFix,self.global_pos_callback)
+        rospy.Subscriber("mavros/global_position/global",NavSatFix,self.global_pos_callback)
         
         self.setpoint_publisher = rospy.Publisher(self.setpoint_topic, setpoint_topic_type, queue_size=1)
-        self.global_setpoint_publisher = rospy.Publisher("/mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
+        self.global_setpoint_publisher = rospy.Publisher("mavros/setpoint_position/global", GeoPoseStamped, queue_size=1)
 
         self.mode=''
         rospy.Subscriber(
