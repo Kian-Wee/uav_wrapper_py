@@ -30,16 +30,21 @@ class offboard_node():
 
 
         # Mavros
-        rospy.wait_for_service("mavros/cmd/arming")
+        # rospy.wait_for_service("mavros/cmd/arming")
         arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
+        rospy.wait_for_service("mavros/set_mode") # Wait for service to initalise
         self.flight_mode_srv = rospy.ServiceProxy('mavros/set_mode', SetMode)
 
+        rospy.wait_for_service("resume_odom") # Wait for service to initalise
         self.resume_odom_srv = rospy.ServiceProxy('resume_odom', Empty) # Resume odometry
+        rospy.wait_for_service("reset_odom") # Wait for service to initalise
         self.reset_odom_srv = rospy.ServiceProxy('reset_odom', Empty)
+        rospy.wait_for_service("resume") # Wait for service to initalise
         self.resume_srv = rospy.ServiceProxy('resume', Empty) # Resume mapping
+        rospy.wait_for_service("reset") # Wait for service to initalise
         self.reset_srv = rospy.ServiceProxy('reset', Empty)
 
         rospy.Subscriber(
@@ -79,6 +84,7 @@ class offboard_node():
         # self.drone_pos = rospy.Publisher('mavros/setpoint_position/local', PoseStamped,queue_size=1)
         # self.output_position = PoseStamped()
         self.offboard1_flag = 0
+        # self.last_req = rospy.Time.now()
 
 
         # Phase 2
@@ -99,7 +105,6 @@ class offboard_node():
         self.init = 0
         self.prearm_reboot_srv = rospy.ServiceProxy('mavros/cmd/command', CommandLong) #"broadcast: false, command: 246, confirmation: 0, param1: 1.0, param2: 0.0, param3: 0.0, param4: 0.0, param5: 0.0, param6: 0.0, param7: 0.0"
 
-
         while not rospy.is_shutdown():
 
             # Land UAV once mission/phase is over when phase is set to land
@@ -111,13 +116,13 @@ class offboard_node():
             # Check for init signal for second phase
             elif self.init == 1:
                 rospy.logwarn_once("Starting first phase of deployment")
-                
-                if self.offboard1_flag == 0:
-                    self.offboard1_flag = self.check_offboard() # Keeps calling function which attempts to set it into offboard
+
+                if self.uav.mode !='OFFBOARD' and self.phase == "arming":
+                    self.check_offboard() # Keeps calling function which attempts to set it into offboard
 
                 # Checks if its in offboard mode, the second part should technically not be needed
                 # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
-                elif self.uav.mode=='OFFBOARD':
+                if self.uav.mode=='OFFBOARD':
                     # Arm the drone
                     if self.phase == "arming":
                         if(arming_client.call(arm_cmd).success == True):
@@ -136,15 +141,28 @@ class offboard_node():
                             # Assume it is using onboard vio in this case
                             else:
                                 self.hover_pos[2] = self.uav.pos.z + self.takeoff_height
+                            
+                            last_req = rospy.Time.now()
 
                     elif self.phase == "armed":
                         rospy.loginfo_throttle(2,"Taking off to setpoint %s",str(self.takeoff_pos))
-                        self.uav.setpoint(self.hover_pos[0],self.hover_pos[1],self.hover_pos[2])
-                        if self.postarm_counter > rate * 3:
-                            rospy.loginfo_throttle(1,"aligning")
-                            self.phase = "alignment"
-                        else:
-                            self.postarm_counter += 1
+
+                        self.uav.setpoint(self.takeoff_pos[0],self.takeoff_pos[1],self.takeoff_pos[2])
+
+                        if (abs(self.uav.pos.x-self.takeoff_pos[0])<0.1):
+                            if (abs(self.uav.pos.z-self.takeoff_pos[2])<0.2):
+                                self.phase = "alignment"
+ 
+                        # print(self.hover_pos[2])
+                        
+                        # # if self.postarm_counter > (rate * 5):
+                        # if (rospy.Time.now() - last_req) > rospy.Duration(5.0):
+                        #     rospy.loginfo_throttle(1,"aligning")
+                        #     self.phase = "alignment"
+                        # else:
+                        #     self.postarm_counter += 1
+
+                        
                                     
                     elif self.phase == "alignment":
                         try:
@@ -195,7 +213,9 @@ class offboard_node():
                                 self.phase = "landing"
 
                         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                            rospy.logwarn("Lost Aruco")
+                            rospy.logwarn_throttle(2,"Lost Aruco")
+                            self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z)
+
 
                     elif self.phase == "landing":
                         if(self.flight_mode_srv(custom_mode='AUTO.LAND')): # Currently not sending any offboard setpoint, attempting to just force land
@@ -209,7 +229,6 @@ class offboard_node():
                 # Pub position callback to allow it to return to offboard
                 else:
                     rospy.loginfo_throttle(2,"Waiting for OFFBOARD")
-
                     self.uav.setpoint(self.uav.pos.x,self.uav.pos.y,self.uav.pos.z) 
 
 
@@ -217,12 +236,12 @@ class offboard_node():
             elif self.init == 2:
                 rospy.logwarn_once("Starting second phase of deployment")
 
-                if self.offboard2_flag == 0:
-                    self.offboard2_flag = self.check_offboard() # Keeps calling function which attempts to set it into offboard
+                if self.uav.mode !='OFFBOARD' and self.phase == "arming":
+                    self.check_offboard() # Keeps calling function which attempts to set it into offboard
 
                 # Checks if its in offboard mode, the second part should technically not be needed
                 # If its not in offboard/unable to go to offboard, continue pubbing setpoints to try offboard
-                elif self.uav.mode=='OFFBOARD':
+                if self.uav.mode=='OFFBOARD':
                     
                     # Arm the drone
                     if self.phase == "arming":
@@ -279,15 +298,18 @@ class offboard_node():
             rospy.loginfo("Mapping takeoff start signal recieved, starting first phase")
             if not self.reset_odom_srv():
                 rospy.logerr("Failed to reset odom!")
+            time.sleep(0.5)
             if not self.reset_srv():
                 rospy.logerr("Failed to reset map!")
-            if(not self.resume_odom_srv()):
-                rospy.logerr("Failed to resume odom!")
-            if(not self.resume_srv()):
-                rospy.logerr("Failed to resume map!")
+            time.sleep(0.5)
+            # if(not self.resume_odom_srv()):
+            #     rospy.logerr("Failed to resume odom!")
+            # if(not self.resume_srv()):
+            #     rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
-            time.sleep(3)
+            time.sleep(5)
             self.init = 1
+            self.phase = "arming"
 
     def start2_callback(self, msg):
         if msg.data == 1 and self.init == 1:
@@ -297,8 +319,9 @@ class offboard_node():
             if(not self.resume_srv()):
                 rospy.logerr("Failed to resume map!")
             self.prearm_reboot_srv(command=246,param1=1)
-            time.sleep(3)
+            time.sleep(5)
             self.init = 2
+            self.phase = "arming"
 
     def prearm_check_callback(self,msg):
         self.prearm_check = msg.data
@@ -308,12 +331,28 @@ class offboard_node():
         # Wait for drone flags to clear(fusion of pose)
         if self.prearm_check == 1:
             rospy.loginfo_throttle(2,"Pre arm check sucessful, waiting for offboard mode to proceed to arming/takeoff")
-           
-            if self.uav.mode !='OFFBOARD':
-                if(self.flight_mode_srv(custom_mode='OFFBOARD')):
-                    rospy.logwarn_throttle(2,"set OFFBOARD mode success")
-                    self.phase = "arming"
-                    return 1 # Already in offboard
+
+            # if(self.flight_mode_srv(custom_mode='OFFBOARD').mode_sent == True):
+            #     return 1
+            
+            if(self.flight_mode_srv(custom_mode='OFFBOARD').mode_sent == True):
+                return 1
+
+            # try:
+            #     if(self.flight_mode_srv(custom_mode='OFFBOARD')):
+            #         pass
+            #     # rospy.logwarn_throttle(2,"set OFFBOARD mode success")
+            #     time.sleep(0.5)
+            #     # self.phase = "arming"
+            #     return 1 # Already in offboard
+            # except:
+            #     return 0
+
+            # # PX4 example
+            # if(self.uav.mode != "OFFBOARD" and (rospy.Time.now() - self.last_req) > rospy.Duration(5.0)):
+            #     if(self.flight_mode_srv(custom_mode='OFFBOARD').mode_sent == True):
+            #         rospy.logwarn("set OFFBOARD mode success")
+            #     last_req = rospy.Time.now()
 
         return 0
 
